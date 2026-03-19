@@ -2,7 +2,7 @@ package service
 
 import (
 	"context"
-	"errors"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
@@ -10,41 +10,67 @@ import (
 	"github.com/sah4ez/ducalis-tg/pkg/types"
 )
 
-// TaskService implements contract.TaskService
+// ===== TASK SERVICE =====
+
 type TaskService struct {
-	store  TaskStore
-	logger zerolog.Logger
+	taskRepo       TaskRepository
+	workspaceRepo  WorkspaceRepository
+	voteRepo       VoteRepository
+	estimationRepo EstimationRepository
+	logger         zerolog.Logger
 }
 
-// TaskStore defines storage interface for tasks
-type TaskStore interface {
+type TaskRepository interface {
 	Create(ctx context.Context, task *types.Task) error
 	Get(ctx context.Context, id string) (*types.Task, error)
 	Update(ctx context.Context, task *types.Task) error
 	Delete(ctx context.Context, id string) error
 	List(ctx context.Context, req types.ListTasksRequest) ([]types.Task, int, error)
-	AddVote(ctx context.Context, taskID, userID string, weight float64) error
-	RemoveVote(ctx context.Context, taskID, userID string) error
-	AddEstimation(ctx context.Context, taskID, userID string, value float64) error
-	SetDependencies(ctx context.Context, taskID string, dependencyIDs []string) error
-	GetRanked(ctx context.Context, workspaceID string, limit, offset int) ([]types.TaskWithRank, error)
 }
 
-// NewTaskService creates new task service
-func NewTaskService(store TaskStore, logger zerolog.Logger) *TaskService {
+type VoteRepository interface {
+	Add(ctx context.Context, taskID string, userID string, weight float64) error
+	Remove(ctx context.Context, taskID string, userID string) error
+	GetByTask(ctx context.Context, taskID string) ([]types.Vote, error)
+}
+
+type EstimationRepository interface {
+	Add(ctx context.Context, taskID string, userID string, value float64, unit string) error
+	GetByTask(ctx context.Context, taskID string) ([]types.Estimation, error)
+}
+
+func NewTaskService(
+	taskRepo TaskRepository,
+	workspaceRepo WorkspaceRepository,
+	voteRepo VoteRepository,
+	estimationRepo EstimationRepository,
+	logger zerolog.Logger,
+) *TaskService {
 	return &TaskService{
-		store:  store,
-		logger: logger,
+		taskRepo:       taskRepo,
+		workspaceRepo:  workspaceRepo,
+		voteRepo:       voteRepo,
+		estimationRepo: estimationRepo,
+		logger:         logger,
 	}
 }
 
-// Create creates a new task
 func (s *TaskService) Create(ctx context.Context, req types.CreateTaskRequest) (*types.Task, error) {
-	userID, ok := ctx.Value("userID").(string)
+	userID, ok := ctx.Value(UserIDKey).(string)
 	if !ok {
-		return nil, errors.New("unauthorized")
+		return nil, ErrUnauthorized
 	}
 
+	if req.WorkspaceID == "" || req.Title == "" {
+		return nil, ErrInvalidInput
+	}
+
+	// Verify workspace access
+	if _, err := s.workspaceRepo.Get(ctx, req.WorkspaceID); err != nil {
+		return nil, err
+	}
+
+	now := time.Now()
 	task := &types.Task{
 		ID:           uuid.New().String(),
 		WorkspaceID:  req.WorkspaceID,
@@ -59,13 +85,16 @@ func (s *TaskService) Create(ctx context.Context, req types.CreateTaskRequest) (
 		Labels:       req.Labels,
 		AssigneeID:   req.AssigneeID,
 		CreatedBy:    userID,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+		Metadata:     req.Metadata,
 	}
 
 	if task.Status == "" {
 		task.Status = "backlog"
 	}
 
-	if err := s.store.Create(ctx, task); err != nil {
+	if err := s.taskRepo.Create(ctx, task); err != nil {
 		s.logger.Error().Err(err).Msg("failed to create task")
 		return nil, err
 	}
@@ -73,14 +102,24 @@ func (s *TaskService) Create(ctx context.Context, req types.CreateTaskRequest) (
 	return task, nil
 }
 
-// Get returns task by ID
 func (s *TaskService) Get(ctx context.Context, id string) (*types.Task, error) {
-	return s.store.Get(ctx, id)
+	task, err := s.taskRepo.Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	// Load votes and estimations
+	votes, _ := s.voteRepo.GetByTask(ctx, id)
+	estimations, _ := s.estimationRepo.GetByTask(ctx, id)
+
+	task.Votes = votes
+	task.Estimations = estimations
+
+	return task, nil
 }
 
-// Update updates task properties
 func (s *TaskService) Update(ctx context.Context, id string, req types.UpdateTaskRequest) (*types.Task, error) {
-	task, err := s.store.Get(ctx, id)
+	task, err := s.taskRepo.Get(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -104,89 +143,105 @@ func (s *TaskService) Update(ctx context.Context, id string, req types.UpdateTas
 		task.AssigneeID = req.AssigneeID
 	}
 
-	if err := s.store.Update(ctx, task); err != nil {
+	task.UpdatedAt = time.Now()
+
+	if err := s.taskRepo.Update(ctx, task); err != nil {
 		return nil, err
 	}
 
 	return task, nil
 }
 
-// Delete deletes task
 func (s *TaskService) Delete(ctx context.Context, id string) error {
-	return s.store.Delete(ctx, id)
+	return s.taskRepo.Delete(ctx, id)
 }
 
-// List returns tasks with filters
 func (s *TaskService) List(ctx context.Context, req types.ListTasksRequest) ([]types.Task, int, error) {
-	if req.Limit <= 0 {
-		req.Limit = 50
-	}
-	if req.Limit > 100 {
-		req.Limit = 100
-	}
-
-	return s.store.List(ctx, req)
+	return s.taskRepo.List(ctx, req)
 }
 
-// SetScores sets scoring values for a task
 func (s *TaskService) SetScores(ctx context.Context, taskID string, scores map[string]float64) (*types.Task, error) {
-	task, err := s.store.Get(ctx, taskID)
+	task, err := s.taskRepo.Get(ctx, taskID)
 	if err != nil {
 		return nil, err
 	}
 
+	workspace, err := s.workspaceRepo.Get(ctx, task.WorkspaceID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Validate scores against workspace criteria
+	for _, criterion := range workspace.Scoring.Criteria {
+		if criterion.Required {
+			if _, ok := scores[criterion.ID]; !ok {
+				return nil, ErrInvalidInput
+			}
+		}
+	}
+
 	task.Scores = scores
+	task.FinalScore = s.calculateFinalScore(scores, workspace.Scoring)
+	task.UpdatedAt = time.Now()
 
-	// TODO: Calculate final score based on workspace scoring config
-
-	if err := s.store.Update(ctx, task); err != nil {
+	if err := s.taskRepo.Update(ctx, task); err != nil {
 		return nil, err
 	}
 
 	return task, nil
 }
 
-// Vote adds user's vote to task
-func (s *TaskService) Vote(ctx context.Context, taskID string, userID string, weight float64) (*types.Task, error) {
-	if err := s.store.AddVote(ctx, taskID, userID, weight); err != nil {
+func (s *TaskService) calculateFinalScore(scores map[string]float64, config types.ScoringConfig) float64 {
+	// Simple weighted sum for now
+	// TODO: Implement formula parsing for custom formulas
+	total := 0.0
+	for _, criterion := range config.Criteria {
+		if val, ok := scores[criterion.ID]; ok {
+			total += val * criterion.Weight
+		}
+	}
+	return total
+}
+
+func (s *TaskService) Vote(ctx context.Context, taskID string, weight float64) (*types.Task, error) {
+	userID, ok := ctx.Value(UserIDKey).(string)
+	if !ok {
+		return nil, ErrUnauthorized
+	}
+
+	if err := s.voteRepo.Add(ctx, taskID, userID, weight); err != nil {
 		return nil, err
 	}
 
-	return s.store.Get(ctx, taskID)
+	return s.Get(ctx, taskID)
 }
 
-// RemoveVote removes user's vote from task
-func (s *TaskService) RemoveVote(ctx context.Context, taskID string, userID string) (*types.Task, error) {
-	if err := s.store.RemoveVote(ctx, taskID, userID); err != nil {
+func (s *TaskService) RemoveVote(ctx context.Context, taskID string) (*types.Task, error) {
+	userID, ok := ctx.Value(UserIDKey).(string)
+	if !ok {
+		return nil, ErrUnauthorized
+	}
+
+	if err := s.voteRepo.Remove(ctx, taskID, userID); err != nil {
 		return nil, err
 	}
 
-	return s.store.Get(ctx, taskID)
+	return s.Get(ctx, taskID)
 }
 
-// Estimate adds user's estimation to task
-func (s *TaskService) Estimate(ctx context.Context, taskID string, userID string, value float64) (*types.Task, error) {
-	if err := s.store.AddEstimation(ctx, taskID, userID, value); err != nil {
+func (s *TaskService) Estimate(ctx context.Context, taskID string, value float64, unit string) (*types.Task, error) {
+	userID, ok := ctx.Value(UserIDKey).(string)
+	if !ok {
+		return nil, ErrUnauthorized
+	}
+
+	if unit == "" {
+		unit = "points"
+	}
+
+	if err := s.estimationRepo.Add(ctx, taskID, userID, value, unit); err != nil {
 		return nil, err
 	}
 
-	return s.store.Get(ctx, taskID)
-}
-
-// SetDependencies sets task dependencies
-func (s *TaskService) SetDependencies(ctx context.Context, taskID string, dependencyIDs []string) (*types.Task, error) {
-	if err := s.store.SetDependencies(ctx, taskID, dependencyIDs); err != nil {
-		return nil, err
-	}
-
-	return s.store.Get(ctx, taskID)
-}
-
-// GetRanked returns tasks ranked by final score
-func (s *TaskService) GetRanked(ctx context.Context, workspaceID string, limit int, offset int) ([]types.TaskWithRank, error) {
-	if limit <= 0 {
-		limit = 50
-	}
-
-	return s.store.GetRanked(ctx, workspaceID, limit, offset)
+	return s.Get(ctx, taskID)
 }

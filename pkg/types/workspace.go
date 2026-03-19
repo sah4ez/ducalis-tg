@@ -82,3 +82,22 @@ type RegisterRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
 }
+
+// Admin represents system administrator
+type Admin struct {
+	ID        string     `json:"id"`
+	Email     string     `json:"email"`
+	Name      string     `json:"name"`
+	Role      string     `json:"role"` // super_admin, admin, support
+	CreatedAt time.Time  `json:"createdAt"`
+	LastLogin *time.Time `json:"lastLogin,omitempty"`
+}
+
+// SystemStats represents system statistics
+type SystemStats struct {
+	TotalUsers        int64 `json:"totalUsers"`
+	ActiveUsers       int64 `json:"activeUsers"`
+	TotalWorkspaces   int64 `json:"totalWorkspaces"`
+	TotalTasks        int64 `json:"totalTasks"`
+	TotalIntegrations int64 `json:"totalIntegrations"`
+}
