@@ -8,7 +8,7 @@ package contract
 import (
 	"context"
 
-	"github.com/sah4ez/priora/pkg/types"
+	"github.com/sah4ez/ducalis-tg/pkg/types"
 )
 
 // WorkspaceService manages workspaces and their configuration

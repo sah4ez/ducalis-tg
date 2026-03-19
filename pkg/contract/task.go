@@ -3,7 +3,7 @@ package contract
 import (
 	"context"
 
-	"github.com/sah4ez/priora/pkg/types"
+	"github.com/sah4ez/ducalis-tg/pkg/types"
 )
 
 // TaskService manages tasks and their scoring

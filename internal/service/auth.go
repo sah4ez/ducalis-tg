@@ -10,7 +10,7 @@ import (
 	"github.com/rs/zerolog"
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/sah4ez/priora/pkg/types"
+	"github.com/sah4ez/ducalis-tg/pkg/types"
 )
 
 // AuthService implements contract.AuthService

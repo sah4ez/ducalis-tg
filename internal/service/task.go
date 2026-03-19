@@ -7,7 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 
-	"github.com/sah4ez/priora/pkg/types"
+	"github.com/sah4ez/ducalis-tg/pkg/types"
 )
 
 // TaskService implements contract.TaskService

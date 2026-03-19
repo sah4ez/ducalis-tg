@@ -6,7 +6,7 @@ import (
 
 	"github.com/rs/zerolog"
 
-	"github.com/sah4ez/priora/pkg/types"
+	"github.com/sah4ez/ducalis-tg/pkg/types"
 )
 
 // IntegrationService implements contract.IntegrationService
@@ -74,7 +74,5 @@ func (s *IntegrationService) GetSyncStatus(ctx context.Context, id string) (type
 		Status:         integration.SyncStatus,
 		LastSyncAt:     integration.LastSyncAt,
 		LastError:      integration.SyncError,
-		AutoSync:       integration.AutoSync,
-		SyncInterval:   integration.SyncInterval,
 	}, nil
 }

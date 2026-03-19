@@ -1,0 +1,61 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: priora-postgres
+    environment:
+      POSTGRES_USER: priora
+      POSTGRES_PASSWORD: priora123
+      POSTGRES_DB: priora
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./migrations/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U priora"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: priora-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: priora-app
+    ports:
+      - "8080:8080"
+      - "9090:9090"  # metrics
+    environment:
+      - DATABASE_URL=postgres://priora:priora123@postgres:5432/priora?sslmode=disable
+      - REDIS_URL=redis://redis:6379/0
+      - BIND=:8080
+      - METRICS_BIND=:9090
+      - LOG_LEVEL=debug
+      - JWT_SECRET=change-me-in-production
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - .:/app
+    command: ["make", "run"]
+
+volumes:
+  postgres_data:
+  redis_data:
