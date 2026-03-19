@@ -1,0 +1,29 @@
+database:
+  url: postgres://priora:priora123@localhost:5432/priora?sslmode=disable
+  max_connections: 25
+  min_connections: 5
+
+redis:
+  url: redis://localhost:6379/0
+
+server:
+  bind: :8080
+  metrics_bind: :9090
+  health_bind: :9091
+
+auth:
+  jwt_secret: change-me-in-production
+  jwt_ttl: 24h
+  refresh_ttl: 168h # 7 days
+
+logging:
+  level: debug
+  format: console
+
+integrations:
+  github:
+    enabled: true
+  jira:
+    enabled: true
+  linear:
+    enabled: true
