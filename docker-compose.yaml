@@ -1,50 +1,115 @@
 version: '3.8'
 
 services:
+  # PostgreSQL Database
   postgres:
     image: postgres:16-alpine
-    container_name: priora-postgres
+    container_name: ducalis-postgres
     environment:
-      POSTGRES_USER: priora
-      POSTGRES_PASSWORD: priora123
-      POSTGRES_DB: priora
+      POSTGRES_USER: ducalis
+      POSTGRES_PASSWORD: ducalis123
+      POSTGRES_DB: ducalis
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./migrations/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U priora"]
-      interval: 5s
+      test: ["CMD-SHELL", "pg_isready -U ducalis"]
+      interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - ducalis-net
 
+  # Redis Cache
   redis:
     image: redis:7-alpine
-    container_name: priora-redis
+    container_name: ducalis-redis
     ports:
       - "6379:6379"
     volumes:
       - redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
+      interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - ducalis-net
 
-  app:
+  # Zookeeper (for Kafka)
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: ducalis-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    volumes:
+      - zookeeper_data:/var/lib/zookeeper/data
+      - zookeeper_logs:/var/lib/zookeeper/log
+    networks:
+      - ducalis-net
+
+  # Kafka Message Broker
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: ducalis-kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+      - "9093:9093"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - ducalis-net
+
+  # Kafka UI (optional - for development)
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: ducalis-kafka-ui
+    depends_on:
+      - kafka
+    ports:
+      - "8081:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: ducalis
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+      KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
+    networks:
+      - ducalis-net
+
+  # Public API Service
+  server-public:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: priora-app
+      args:
+        SERVICE: server-public
+    container_name: ducalis-public
     ports:
       - "8080:8080"
-      - "9090:9090"  # metrics
     environment:
-      - DATABASE_URL=postgres://priora:priora123@postgres:5432/priora?sslmode=disable
+      - DATABASE_URL=postgres://ducalis:ducalis123@postgres:5432/ducalis?sslmode=disable
       - REDIS_URL=redis://redis:6379/0
+      - KAFKA_BROKERS=kafka:9092
       - BIND=:8080
-      - METRICS_BIND=:9090
       - LOG_LEVEL=debug
       - JWT_SECRET=change-me-in-production
     depends_on:
@@ -52,10 +117,88 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    volumes:
-      - .:/app
-    command: ["make", "run"]
+      kafka:
+        condition: service_healthy
+    networks:
+      - ducalis-net
+    command: ["./server-public"]
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # Admin API Service
+  server-admin:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE: server-admin
+    container_name: ducalis-admin
+    ports:
+      - "8082:8082"
+    environment:
+      - DATABASE_URL=postgres://ducalis:ducalis123@postgres:5432/ducalis?sslmode=disable
+      - REDIS_URL=redis://redis:6379/0
+      - KAFKA_BROKERS=kafka:9092
+      - BIND=:8082
+      - LOG_LEVEL=debug
+      - ADMIN_JWT_SECRET=change-admin-secret-in-production
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - ducalis-net
+    command: ["./server-admin"]
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8082/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # Internal API Service
+  server-internal:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE: server-internal
+    container_name: ducalis-internal
+    ports:
+      - "8083:8083"
+    environment:
+      - DATABASE_URL=postgres://ducalis:ducalis123@postgres:5432/ducalis?sslmode=disable
+      - REDIS_URL=redis://redis:6379/0
+      - KAFKA_BROKERS=kafka:9092
+      - BIND=:8083
+      - LOG_LEVEL=debug
+      - INTERNAL_API_KEY=change-internal-api-key-in-production
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    networks:
+      - ducalis-net
+    command: ["./server-internal"]
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8083/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
 volumes:
   postgres_data:
   redis_data:
+  zookeeper_data:
+  zookeeper_logs:
+  kafka_data:
+
+networks:
+  ducalis-net:
+    driver: bridge

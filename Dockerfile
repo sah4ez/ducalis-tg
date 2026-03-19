@@ -1,46 +1,63 @@
 # Build stage
 FROM golang:1.24-alpine AS builder
 
-RUN apk add --no-cache git make
+# Install build dependencies
+RUN apk add --no-cache git make bash
 
-WORKDIR /app
+WORKDIR /build
 
-# Copy go mod files
-COPY go.mod go.sum ./
-RUN go mod download
+# Copy go mod files first for caching
+COPY go.mod go.sum* ./
+RUN go mod download || go mod tidy
 
 # Copy source code
 COPY . .
 
-# Generate transport layer
-RUN go install github.com/seniorGolang/tg/cmd/tg@v2
-RUN tg transport --services ./pkg/contract --out ./internal/transport
+# Build all binaries
+RUN CGO_ENABLED=0 GOOS=linux go build \
+    -ldflags="-w -s -X main.Version=$(git describe --tags --always --dirty 2>/dev/null || echo 'dev')" \
+    -o /server-public ./cmd/server-public
 
-# Build binary
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /priora ./cmd/server
+RUN CGO_ENABLED=0 GOOS=linux go build \
+    -ldflags="-w -s -X main.Version=$(git describe --tags --always --dirty 2>/dev/null || echo 'dev')" \
+    -o /server-admin ./cmd/server-admin
+
+RUN CGO_ENABLED=0 GOOS=linux go build \
+    -ldflags="-w -s -X main.Version=$(git describe --tags --always --dirty 2>/dev/null || echo 'dev')" \
+    -o /server-internal ./cmd/server-internal
 
 # Runtime stage
 FROM alpine:3.19
 
+# Install runtime dependencies
 RUN apk add --no-cache ca-certificates tzdata
 
 WORKDIR /app
 
-# Copy binary
-COPY --from=builder /priora /app/priora
+# Copy binaries from builder
+COPY --from=builder /server-public /app/server-public
+COPY --from=builder /server-admin /app/server-admin
+COPY --from=builder /server-internal /app/server-internal
 
-# Copy migrations
+# Copy migrations (for manual migration runs)
 COPY migrations/ /app/migrations/
 
 # Create non-root user
-RUN addgroup -g 1000 priora && \
-    adduser -u 1000 -G priora -s /bin/sh -D priora
+RUN addgroup -g 1000 ducalis && \
+    adduser -u 1000 -G ducalis -s /bin/sh -D ducalis
 
-USER priora
+# Set ownership
+RUN chown -R ducalis:ducalis /app
 
-EXPOSE 8080 9090
+USER ducalis
 
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:9091/health || exit 1
+# No default EXPOSE - each service uses different port
+# Public: 8080
+# Admin: 8082
+# Internal: 8083
 
-ENTRYPOINT ["/app/priora"]
+# No default ENTRYPOINT - specify which service to run via command
+# Example:
+#   docker run ducalis ./server-public
+#   docker run ducalis ./server-admin
+#   docker run ducalis ./server-internal
