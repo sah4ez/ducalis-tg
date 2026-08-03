@@ -1,0 +1,1052 @@
+openapi: 3.0.0
+info:
+    title: Priora
+    version: 1.0.0
+servers:
+    - {}
+paths: {}
+components:
+    schemas:
+        requestAuthServiceGetMe:
+            type: object
+            required:
+                - userID
+            properties:
+                userID:
+                    type: string
+        requestAuthServiceLogin:
+            type: object
+            required:
+                - email
+                - password
+            properties:
+                email:
+                    type: string
+                password:
+                    type: string
+        requestAuthServiceOAuthAuthorize:
+            type: object
+            required:
+                - provider
+                - redirectURL
+            properties:
+                provider:
+                    type: string
+                redirectURL:
+                    type: string
+        requestAuthServiceOAuthCallback:
+            type: object
+            required:
+                - provider
+                - code
+                - state
+            properties:
+                code:
+                    type: string
+                provider:
+                    type: string
+                state:
+                    type: string
+        requestAuthServiceRefreshToken:
+            type: object
+            required:
+                - refreshToken
+            properties:
+                refreshToken:
+                    type: string
+        requestAuthServiceRegister:
+            type: object
+            required:
+                - req
+            properties:
+                req:
+                    $ref: '#/components/schemas/types.RegisterRequest'
+        requestIntegrationServiceCreateGitHub:
+            type: object
+            required:
+                - req
+            properties:
+                req:
+                    $ref: '#/components/schemas/types.CreateGitHubIntegrationRequest'
+        requestIntegrationServiceCreateJira:
+            type: object
+            required:
+                - req
+            properties:
+                req:
+                    $ref: '#/components/schemas/types.CreateJiraIntegrationRequest'
+        requestIntegrationServiceCreateLinear:
+            type: object
+            required:
+                - req
+            properties:
+                req:
+                    $ref: '#/components/schemas/types.CreateLinearIntegrationRequest'
+        requestIntegrationServiceDelete:
+            type: object
+            required:
+                - id
+            properties:
+                id:
+                    type: string
+        requestIntegrationServiceGetSyncStatus:
+            type: object
+            required:
+                - id
+            properties:
+                id:
+                    type: string
+        requestIntegrationServiceList:
+            type: object
+            required:
+                - workspaceID
+            properties:
+                workspaceID:
+                    type: string
+        requestIntegrationServiceSync:
+            type: object
+            required:
+                - id
+            properties:
+                id:
+                    type: string
+        requestTaskServiceCreate:
+            type: object
+            required:
+                - req
+            properties:
+                req:
+                    $ref: '#/components/schemas/types.CreateTaskRequest'
+            description: Creates
+        requestTaskServiceDelete:
+            type: object
+            required:
+                - id
+            properties:
+                id:
+                    type: string
+        requestTaskServiceEstimate:
+            type: object
+            required:
+                - taskID
+                - userID
+                - value
+            properties:
+                taskID:
+                    type: string
+                userID:
+                    type: string
+                value:
+                    type: number
+                    format: float
+        requestTaskServiceGet:
+            type: object
+            required:
+                - id
+            properties:
+                id:
+                    type: string
+        requestTaskServiceGetRanked:
+            type: object
+            required:
+                - workspaceID
+                - limit
+                - offset
+            properties:
+                limit:
+                    type: number
+                    format: int
+                offset:
+                    type: number
+                    format: int
+                workspaceID:
+                    type: string
+        requestTaskServiceList:
+            type: object
+            required:
+                - req
+            properties:
+                req:
+                    $ref: '#/components/schemas/types.ListTasksRequest'
+        requestTaskServiceRemoveVote:
+            type: object
+            required:
+                - taskID
+                - userID
+            properties:
+                taskID:
+                    type: string
+                userID:
+                    type: string
+        requestTaskServiceSetDependencies:
+            type: object
+            required:
+                - taskID
+                - dependencyIDs
+            properties:
+                dependencyIDs:
+                    type: array
+                    items:
+                        type: string
+                    nullable: true
+                taskID:
+                    type: string
+        requestTaskServiceSetScores:
+            type: object
+            required:
+                - taskID
+                - scores
+            properties:
+                scores:
+                    type: object
+                    additionalProperties:
+                        type: number
+                        format: float
+                taskID:
+                    type: string
+        requestTaskServiceUpdate:
+            type: object
+            required:
+                - id
+                - req
+            properties:
+                id:
+                    type: string
+                req:
+                    $ref: '#/components/schemas/types.UpdateTaskRequest'
+        requestTaskServiceVote:
+            type: object
+            required:
+                - taskID
+                - userID
+                - weight
+            properties:
+                taskID:
+                    type: string
+                userID:
+                    type: string
+                weight:
+                    type: number
+                    format: float
+        requestWorkspaceServiceCreate:
+            type: object
+            required:
+                - req
+            properties:
+                req:
+                    $ref: '#/components/schemas/types.CreateWorkspaceRequest'
+            description: Creates
+        requestWorkspaceServiceDelete:
+            type: object
+            required:
+                - id
+            properties:
+                id:
+                    type: string
+        requestWorkspaceServiceGet:
+            type: object
+            required:
+                - id
+            properties:
+                id:
+                    type: string
+        requestWorkspaceServiceInviteMember:
+            type: object
+            required:
+                - workspaceID
+                - email
+                - role
+            properties:
+                email:
+                    type: string
+                role:
+                    type: string
+                workspaceID:
+                    type: string
+        requestWorkspaceServiceList:
+            type: object
+            required:
+                - userID
+                - limit
+                - offset
+            properties:
+                limit:
+                    type: number
+                    format: int
+                offset:
+                    type: number
+                    format: int
+                userID:
+                    type: string
+        requestWorkspaceServiceListMembers:
+            type: object
+            required:
+                - workspaceID
+            properties:
+                workspaceID:
+                    type: string
+        requestWorkspaceServiceRemoveMember:
+            type: object
+            required:
+                - workspaceID
+                - memberID
+            properties:
+                memberID:
+                    type: string
+                workspaceID:
+                    type: string
+        requestWorkspaceServiceSetScoringConfig:
+            type: object
+            required:
+                - workspaceID
+                - config
+            properties:
+                config:
+                    $ref: '#/components/schemas/types.ScoringConfig'
+                workspaceID:
+                    type: string
+        requestWorkspaceServiceUpdate:
+            type: object
+            required:
+                - id
+                - req
+            properties:
+                id:
+                    type: string
+                req:
+                    $ref: '#/components/schemas/types.UpdateWorkspaceRequest'
+        responseAuthServiceGetMe:
+            type: object
+            required:
+                - user
+            properties:
+                user:
+                    $ref: '#/components/schemas/types.User'
+        responseAuthServiceLogin:
+            type: object
+            required:
+                - user
+                - token
+            properties:
+                token:
+                    type: string
+                user:
+                    $ref: '#/components/schemas/types.User'
+        responseAuthServiceOAuthAuthorize:
+            type: object
+            required:
+                - authURL
+            properties:
+                authURL:
+                    type: string
+        responseAuthServiceOAuthCallback:
+            type: object
+            required:
+                - user
+                - token
+            properties:
+                token:
+                    type: string
+                user:
+                    $ref: '#/components/schemas/types.User'
+        responseAuthServiceRefreshToken:
+            type: object
+            required:
+                - token
+            properties:
+                token:
+                    type: string
+        responseAuthServiceRegister:
+            type: object
+            required:
+                - user
+                - token
+            properties:
+                token:
+                    type: string
+                user:
+                    oneOf:
+                        - $ref: '#/components/schemas/types.User'
+                        - nullable: true
+        responseIntegrationServiceCreateGitHub:
+            type: object
+            required:
+                - integration
+            properties:
+                integration:
+                    oneOf:
+                        - $ref: '#/components/schemas/types.Integration'
+                        - nullable: true
+        responseIntegrationServiceCreateJira:
+            type: object
+            required:
+                - integration
+            properties:
+                integration:
+                    $ref: '#/components/schemas/types.Integration'
+        responseIntegrationServiceCreateLinear:
+            type: object
+            required:
+                - integration
+            properties:
+                integration:
+                    $ref: '#/components/schemas/types.Integration'
+        responseIntegrationServiceDelete:
+            type: object
+        responseIntegrationServiceGetSyncStatus:
+            type: object
+            required:
+                - status
+            properties:
+                status:
+                    $ref: '#/components/schemas/types.SyncStatus'
+        responseIntegrationServiceList:
+            type: object
+            required:
+                - integrations
+            properties:
+                integrations:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/types.Integration'
+                    nullable: true
+        responseIntegrationServiceSync:
+            type: object
+            required:
+                - result
+            properties:
+                result:
+                    $ref: '#/components/schemas/types.SyncResult'
+        responseTaskServiceCreate:
+            type: object
+            required:
+                - task
+            properties:
+                task:
+                    oneOf:
+                        - $ref: '#/components/schemas/types.Task'
+                        - nullable: true
+            description: Creates
+        responseTaskServiceDelete:
+            type: object
+        responseTaskServiceEstimate:
+            type: object
+            required:
+                - task
+            properties:
+                task:
+                    $ref: '#/components/schemas/types.Task'
+        responseTaskServiceGet:
+            type: object
+            required:
+                - task
+            properties:
+                task:
+                    $ref: '#/components/schemas/types.Task'
+        responseTaskServiceGetRanked:
+            type: object
+            required:
+                - tasks
+            properties:
+                tasks:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/types.TaskWithRank'
+                    nullable: true
+        responseTaskServiceList:
+            type: object
+            required:
+                - tasks
+                - total
+            properties:
+                tasks:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/types.Task'
+                    nullable: true
+                total:
+                    type: number
+                    format: int
+        responseTaskServiceRemoveVote:
+            type: object
+            required:
+                - task
+            properties:
+                task:
+                    $ref: '#/components/schemas/types.Task'
+        responseTaskServiceSetDependencies:
+            type: object
+            required:
+                - task
+            properties:
+                task:
+                    $ref: '#/components/schemas/types.Task'
+        responseTaskServiceSetScores:
+            type: object
+            required:
+                - task
+            properties:
+                task:
+                    $ref: '#/components/schemas/types.Task'
+        responseTaskServiceUpdate:
+            type: object
+            required:
+                - task
+            properties:
+                task:
+                    $ref: '#/components/schemas/types.Task'
+        responseTaskServiceVote:
+            type: object
+            required:
+                - task
+            properties:
+                task:
+                    $ref: '#/components/schemas/types.Task'
+        responseWorkspaceServiceCreate:
+            type: object
+            required:
+                - workspace
+            properties:
+                workspace:
+                    oneOf:
+                        - $ref: '#/components/schemas/types.Workspace'
+                        - nullable: true
+            description: Creates
+        responseWorkspaceServiceDelete:
+            type: object
+        responseWorkspaceServiceGet:
+            type: object
+            required:
+                - workspace
+            properties:
+                workspace:
+                    $ref: '#/components/schemas/types.Workspace'
+        responseWorkspaceServiceInviteMember:
+            type: object
+            required:
+                - member
+            properties:
+                member:
+                    oneOf:
+                        - $ref: '#/components/schemas/types.Member'
+                        - nullable: true
+        responseWorkspaceServiceList:
+            type: object
+            required:
+                - workspaces
+                - total
+            properties:
+                total:
+                    type: number
+                    format: int
+                workspaces:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/types.Workspace'
+                    nullable: true
+        responseWorkspaceServiceListMembers:
+            type: object
+            required:
+                - members
+            properties:
+                members:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/types.Member'
+                    nullable: true
+        responseWorkspaceServiceRemoveMember:
+            type: object
+        responseWorkspaceServiceSetScoringConfig:
+            type: object
+            required:
+                - workspace
+            properties:
+                workspace:
+                    $ref: '#/components/schemas/types.Workspace'
+        responseWorkspaceServiceUpdate:
+            type: object
+            required:
+                - workspace
+            properties:
+                workspace:
+                    $ref: '#/components/schemas/types.Workspace'
+        types.CreateGitHubIntegrationRequest:
+            type: object
+            properties:
+                autoSync:
+                    type: boolean
+                labelFilter:
+                    type: string
+                name:
+                    type: string
+                owner:
+                    type: string
+                repo:
+                    type: string
+                syncLabels:
+                    type: boolean
+                token:
+                    type: string
+                workspaceId:
+                    type: string
+        types.CreateJiraIntegrationRequest:
+            type: object
+            properties:
+                apiToken:
+                    type: string
+                autoSync:
+                    type: boolean
+                baseUrl:
+                    type: string
+                jqlFilter:
+                    type: string
+                name:
+                    type: string
+                projectKey:
+                    type: string
+                username:
+                    type: string
+                workspaceId:
+                    type: string
+        types.CreateLinearIntegrationRequest:
+            type: object
+            properties:
+                apiKey:
+                    type: string
+                autoSync:
+                    type: boolean
+                name:
+                    type: string
+                teamId:
+                    type: string
+                workspaceId:
+                    type: string
+        types.CreateTaskRequest:
+            type: object
+            properties:
+                assigneeId:
+                    type: string
+                dependencies:
+                    type: array
+                    items:
+                        type: string
+                    nullable: true
+                description:
+                    type: string
+                externalId:
+                    type: string
+                externalType:
+                    type: string
+                externalUrl:
+                    type: string
+                labels:
+                    type: array
+                    items:
+                        type: string
+                    nullable: true
+                metadata:
+                    type: object
+                    additionalProperties:
+                        type: object
+                        nullable: true
+                priority:
+                    type: string
+                scores:
+                    type: object
+                    additionalProperties:
+                        type: number
+                        format: float
+                status:
+                    type: string
+                title:
+                    type: string
+                workspaceId:
+                    type: string
+        types.CreateWorkspaceRequest:
+            type: object
+            properties:
+                description:
+                    type: string
+                name:
+                    type: string
+                scoring:
+                    $ref: '#/components/schemas/types.ScoringConfig'
+        types.Criterion:
+            type: object
+            properties:
+                description:
+                    type: string
+                id:
+                    type: string
+                name:
+                    type: string
+                options:
+                    type: array
+                    items:
+                        type: string
+                    nullable: true
+                required:
+                    type: boolean
+                scale:
+                    oneOf:
+                        - $ref: '#/components/schemas/types.Scale'
+                        - nullable: true
+                type:
+                    type: string
+                weight:
+                    type: number
+                    format: float
+        types.Estimation:
+            type: object
+            properties:
+                createdAt:
+                    type: string
+                    format: date-time
+                unit:
+                    type: string
+                userId:
+                    type: string
+                value:
+                    type: number
+                    format: float
+        types.Integration:
+            type: object
+            properties:
+                autoSync:
+                    type: boolean
+                config:
+                    type: object
+                    additionalProperties:
+                        type: object
+                        nullable: true
+                createdAt:
+                    type: string
+                    format: date-time
+                id:
+                    type: string
+                lastSyncAt:
+                    oneOf:
+                        - type: string
+                          format: date-time
+                        - nullable: true
+                name:
+                    type: string
+                syncError:
+                    type: string
+                syncInterval:
+                    type: number
+                    format: int
+                syncStatus:
+                    type: string
+                type:
+                    type: string
+                updatedAt:
+                    type: string
+                    format: date-time
+                workspaceId:
+                    type: string
+        types.ListTasksRequest:
+            type: object
+            properties:
+                assigneeId:
+                    type: string
+                hasScore:
+                    oneOf:
+                        - type: boolean
+                        - nullable: true
+                hasVotes:
+                    oneOf:
+                        - type: boolean
+                        - nullable: true
+                labels:
+                    type: array
+                    items:
+                        type: string
+                    nullable: true
+                limit:
+                    type: number
+                    format: int
+                maxScore:
+                    type: number
+                    format: float
+                minScore:
+                    type: number
+                    format: float
+                offset:
+                    type: number
+                    format: int
+                search:
+                    type: string
+                sortBy:
+                    type: string
+                sortDesc:
+                    type: boolean
+                status:
+                    type: string
+                workspaceId:
+                    type: string
+        types.Member:
+            type: object
+            properties:
+                email:
+                    type: string
+                id:
+                    type: string
+                joinedAt:
+                    type: string
+                    format: date-time
+                name:
+                    type: string
+                role:
+                    type: string
+                userId:
+                    type: string
+                voteWeight:
+                    type: number
+                    format: float
+                workspaceId:
+                    type: string
+        types.RegisterRequest:
+            type: object
+            properties:
+                email:
+                    type: string
+                name:
+                    type: string
+                password:
+                    type: string
+        types.Scale:
+            type: object
+            properties:
+                max:
+                    type: number
+                    format: float
+                min:
+                    type: number
+                    format: float
+        types.ScoringConfig:
+            type: object
+            properties:
+                criteria:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/types.Criterion'
+                    nullable: true
+                formula:
+                    type: string
+                type:
+                    type: string
+        types.SyncError:
+            type: object
+            properties:
+                error:
+                    type: string
+                externalId:
+                    type: string
+        types.SyncResult:
+            type: object
+            properties:
+                durationMs:
+                    type: number
+                    format: int64
+                errors:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/types.SyncError'
+                    nullable: true
+                integrationId:
+                    type: string
+                nextScheduledAt:
+                    oneOf:
+                        - type: string
+                          format: date-time
+                        - nullable: true
+                status:
+                    type: string
+                tasksCreated:
+                    type: number
+                    format: int
+                tasksDeleted:
+                    type: number
+                    format: int
+                tasksUpdated:
+                    type: number
+                    format: int
+        types.SyncStatus:
+            type: object
+            properties:
+                integrationId:
+                    type: string
+                lastDurationMs:
+                    type: number
+                    format: int64
+                lastError:
+                    type: string
+                lastSyncAt:
+                    oneOf:
+                        - type: string
+                          format: date-time
+                        - nullable: true
+                lastSyncResult:
+                    type: string
+                nextSyncAt:
+                    oneOf:
+                        - type: string
+                          format: date-time
+                        - nullable: true
+                status:
+                    type: string
+                totalTasks:
+                    type: number
+                    format: int
+        types.Task:
+            type: object
+            properties:
+                assigneeId:
+                    type: string
+                createdAt:
+                    type: string
+                    format: date-time
+                createdBy:
+                    type: string
+                dependencies:
+                    type: array
+                    items:
+                        type: string
+                    nullable: true
+                description:
+                    type: string
+                estimations:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/types.Estimation'
+                    nullable: true
+                externalId:
+                    type: string
+                externalType:
+                    type: string
+                externalUrl:
+                    type: string
+                finalScore:
+                    type: number
+                    format: float
+                id:
+                    type: string
+                labels:
+                    type: array
+                    items:
+                        type: string
+                    nullable: true
+                metadata:
+                    type: object
+                    additionalProperties:
+                        type: object
+                        nullable: true
+                priority:
+                    type: string
+                scores:
+                    type: object
+                    additionalProperties:
+                        type: number
+                        format: float
+                status:
+                    type: string
+                title:
+                    type: string
+                updatedAt:
+                    type: string
+                    format: date-time
+                votes:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/types.Vote'
+                    nullable: true
+                workspaceId:
+                    type: string
+        types.TaskWithRank:
+            type: object
+            properties:
+                Task:
+                    $ref: '#/components/schemas/types.Task'
+                percentile:
+                    type: number
+                    format: float
+                rank:
+                    type: number
+                    format: int
+        types.UpdateTaskRequest:
+            type: object
+            properties:
+                assigneeId:
+                    type: string
+                description:
+                    type: string
+                labels:
+                    type: array
+                    items:
+                        type: string
+                    nullable: true
+                metadata:
+                    type: object
+                    additionalProperties:
+                        type: object
+                        nullable: true
+                priority:
+                    type: string
+                status:
+                    type: string
+                title:
+                    type: string
+        types.UpdateWorkspaceRequest:
+            type: object
+            properties:
+                description:
+                    type: string
+                name:
+                    type: string
+                scoring:
+                    $ref: '#/components/schemas/types.ScoringConfig'
+        types.User:
+            type: object
+            properties:
+                avatarUrl:
+                    type: string
+                createdAt:
+                    type: string
+                    format: date-time
+                email:
+                    type: string
+                id:
+                    type: string
+                name:
+                    type: string
+        types.Vote:
+            type: object
+            properties:
+                createdAt:
+                    type: string
+                    format: date-time
+                userId:
+                    type: string
+                weight:
+                    type: number
+                    format: float
+        types.Workspace:
+            type: object
+            properties:
+                createdAt:
+                    type: string
+                    format: date-time
+                description:
+                    type: string
+                id:
+                    type: string
+                name:
+                    type: string
+                ownerId:
+                    type: string
+                scoring:
+                    $ref: '#/components/schemas/types.ScoringConfig'
+                updatedAt:
+                    type: string
+                    format: date-time

@@ -1,0 +1,383 @@
+# microcode — манифест разработки ducalis-tg с loki внутри отдельной VM.
+#
+# ducalis-tg: open-source self-hosted платформа приоритизации задач
+# (альтернатива hi.ducalis.io). Стек: Go 1.24 + gofiber/fiber/v2 + кодогенератор
+# tg v2 (github.com/seniorGolang/tg/v2 — НЕ Telegram; «tg» = Transport Generator,
+# JSON-RPC 2.0 поверх HTTP). Хранилище: PostgreSQL 16 + Redis 7 + Kafka.
+# Три сервиса по портам: public :8080, admin :8082, internal :8083.
+#
+# Один манифест декларативно описывает:
+#   1. НАВЫКИ из GitHub (obra/superpowers), устанавливаемые/переводимые ВНУТРИ VM
+#      (skills.in_vm) + локальные overlay-модули loki под специфику tg-проекта.
+#   2. ОРКЕСТРАЦИЮ: loki с provider cline на модели GLM (z.ai), SDLC со старта
+#      DEVELOPMENT (сервисы уже заскаффолдены, PRD/контракты готовы).
+#   3. СРЕДУ: stock debian VM, allowlist-сеть (z.ai + npm + go proxy + GitHub),
+#      workspace наполняется через `git clone` remote (sandbox.sync), результат
+#      loki забирается на хост через git-daemon :9418 (fetch+merge, без msb cp).
+#
+# Поток данных:
+#   platform.yaml
+#     │  microcode apply
+#     ├─ skills (in VM): msb exec ... skillkit install obra/superpowers ...
+#     ├─ overlay модули: ./custom-skills → /workspace/skills (mount, сохраняется)
+#     ├─ sandbox:        msb create debian + bootstrap.sh (node/loki/cline/shim
+#     │                   + Go 1.24 + tg v2 CLI)
+#     ├─ sync (clone):   git clone https://github.com/sah4ez/ducalis-tg.git
+#     │                   → /workspace (shared history, checkout vm/ducalis-build)
+#     └─ loki (in VM):   loki --provider cline --model glm-5.2 PRD.md
+#                          читает skills/00-index.md (наш overlay)
+#                          → достраивает сервис в /workspace (git-коммиты на vm/...)
+#
+# Запуск (полный runbook — см. README.md рядом):
+#   conda activate mcd
+#   export CLINE_API_KEY=... ZAI_BUSINESS_BASE_URL=https://api.z.ai \
+#          ZAI_OAUTH_ORIGIN=https://chat.z.ai ZAI_OAUTH_CLIENT_ID=client_...
+#   # git-sync задаётся ДЕКЛАРАТИВНО в секции sandbox.sync ниже — host env не нужен.
+#   # (для приватного репо: export GH_TOKEN=ghp_... и раскомментируй sync.auth)
+#   microcode validate microcode/platform.yaml
+#   microcode plan    microcode/platform.yaml --prd microcode/PRD.md
+#   microcode apply   microcode/platform.yaml --prd microcode/PRD.md
+
+version: 1
+
+project:
+  name: ducalis-tg
+  workdir: /workspace
+  state_dir: .microcode
+
+# ───────────────────────────────────────────────────────────────────────── #
+# SKILLS — навыки из GitHub, устанавливаемые ВНУТРИ VM + локальные overlay. #
+# ───────────────────────────────────────────────────────────────────────── #
+skills:
+  in_vm: true                         # skillkit бежит внутри VM (после bootstrap),
+                                     # не на хосте — единое окружение с loki.
+  agents: [cline]                    # фиксированный набор = провайдеры loki 1:1.
+
+  # Публичные скиллы из obra/superpowers: универсальная инженерная методология
+  # (TDD, систематический дебаг, верификация, планирование/исполнение планов).
+  # Переводятся под cline формат через skillkit translate.
+  install:
+    - source: obra/superpowers
+      skills:
+        - test-driven-development        # RED-GREEN-REFACTOR перед коммитом кода
+        - systematic-debugging           # 4-фазный root-cause перед фиксом
+        - verification-before-completion # пруфы готовности (тесты/линт/сборка)
+        - writing-plans                  # bite-sized план декомпозиции
+        - executing-plans                # пошаговая реализация плана
+
+  # Локальные overlay-модули loki под специфику ducalis-tg монтируются отдельно
+  # в sandbox.mounts ниже (./custom-skills → /workspace/skills). Они дополняют
+  # встроенные модули loki: 00-index.md + tg-v2-contract.md + service-wiring.md
+  # + postgres-repo.md + multi-service.md.
+
+  translate:
+    target_agent: cline              # все скиллы переводятся под формат cline
+    output_dir: .skills-generated    # отдельная папка (не конфликтует с overlay /workspace/skills)
+    also_into_memory: true           # зеркалим SKILL.md в .loki/memory/skills/
+
+# ───────────────────────────────────────────────────────────────────────── #
+# LOKI — оркестрация: cline + GLM, старт со стадии разработки.              #
+# ───────────────────────────────────────────────────────────────────────── #
+loki:
+  provider: cline                    # loki вызывает cline CLI (node-shim в VM)
+  model: glm-4.7-flash                     # модель z.ai (→ CLINE_MODEL + LOKI_MODEL_OVERRIDE)
+  max_iterations: 25                 # объёмная задача (wiring 3 сервисов + тесты)
+  max_budget_usd: 8.0
+  effort: high                       # полный SDLC (DISCOVERY→…→DEPLOYMENT)
+  # dashboard отключён: ставит fastapi/uvicorn/sqlalchemy/aiosqlite из PyPI,
+  # а pypi-хосты нужно добавлять в allowlist + пересобирать snapshot. RARV-цикл
+  # идёт и без web-UI; прогресс — `microcode status`. Чтобы включить:
+  # раскомментировать dashboard + добавить pypi.org/files.pythonhosted.org в allow.
+  dashboard: false
+  sdk_mode: full
+  quality_gates:
+    enabled: true
+    opt_out:
+      - magic_debate                 # нет UI — Gate 8 не нужен
+  memory:
+    enabled: true
+    managed: true
+    storage:                         # кросс-проектная память (volume)
+      enabled: true
+      volume: loki-memory
+      dest: /data/loki-memory
+  proofs:
+    enabled: true                    # evidence-receipts в .loki/proofs/
+  provider_clis: [cline]             # bootstrap ставит только cline (+ shim)
+  config_overrides:
+    # стартуем со стадии разработки: каркас 3 сервисов, контракты pkg/contract,
+    # сгенерированный transport internal/transport и postgres-репозитории уже
+    # есть. Главная задача — подключить их в cmd/server-*/main.go (см. PRD.md).
+    start_phase: DEVELOPMENT
+
+# ───────────────────────────────────────────────────────────────────────── #
+# SANDBOX — stock debian, allowlist-сеть, overlay skills, результат в src/. #
+# ───────────────────────────────────────────────────────────────────────── #
+sandbox:
+  image: debian
+  tag: bookworm-slim
+  name: ducalis-build
+  cpus: 4                            # Go-сборка + Kafka в docker — нужно ресурсов
+  memory: 8192                       # MB: postgres+redis+kafka+zookeeper+kafka-ui тяжёлые
+  root_disk: 12G                     # Go module cache + docker images Kafka/PG
+
+  network:
+    # allowlist: запрет по умолчанию. VM ходит только к явно разрешённым хостам.
+    # cline/node-shim использует zai-coding-plan OAuth → нужен api.z.ai.
+    mode: allowlist
+    default_egress: deny
+    allow:
+      # LLM-провайдер (z.ai / GLM) — OAuth endpoint cline
+      - { action: allow, target: api.z.ai, proto: tcp, port: 443 }
+      - { action: allow, target: "*.z.ai", proto: tcp, port: 443 }
+      # apt (bootstrap ставит пакеты: curl, git, ca-certs, docker, jq, procps…)
+      - { action: allow, target: deb.debian.org, proto: tcp, port: 443 }
+      - { action: allow, target: "*.debian.org", proto: tcp, port: 443 }
+      - { action: allow, target: "*.debian.org", proto: tcp, port: 80 }
+      # npm (node, loki-mode, cline, @cline/core, skillkit)
+      - { action: allow, target: registry.npmjs.org, proto: tcp, port: 443 }
+      - { action: allow, target: "*.npmjs.org", proto: tcp, port: 443 }
+      # Node.js tarballs — bootstrap ставит node 22 через `n install 22`,
+      # который качает https://nodejs.org/dist/index.tab + сам tarball.
+      - { action: allow, target: nodejs.org, proto: tcp, port: 443 }
+      - { action: allow, target: "*.nodejs.org", proto: tcp, port: 443 }
+      # bun installer (bootstrap качает bun runtime)
+      - { action: allow, target: bun.sh, proto: tcp, port: 443 }
+      # GitHub (skillkit тянет obra/superpowers; go-модули с github.com; git clone)
+      - { action: allow, target: github.com, proto: tcp, port: 443 }
+      - { action: allow, target: codeload.github.com, proto: tcp, port: 443 }
+      - { action: allow, target: release-assets.githubusercontent.com, proto: tcp, port: 443 }
+      - { action: allow, target: objects.githubusercontent.com, proto: tcp, port: 443 }
+      - { action: allow, target: raw.githubusercontent.com, proto: tcp, port: 443 }
+      # Go modules (go get/tidy/download тянут зависимости отсюда)
+      - { action: allow, target: proxy.golang.org, proto: tcp, port: 443 }
+      - { action: allow, target: "*.golang.org", proto: tcp, port: 443 }
+      - { action: allow, target: sum.golang.org, proto: tcp, port: 443 }
+      # GCS-bucket fallback: некоторые go-модули (напр. circl через go-crypto →
+      # go-git/v5, транзитивная зависимость самого tg v2) отдаются только отсюда.
+      - { action: allow, target: storage.googleapis.com, proto: tcp, port: 443 }
+      - { action: allow, target: "*.googleapis.com", proto: tcp, port: 443 }
+      - { action: allow, target: "*.pkg.go.dev", proto: tcp, port: 443 }
+      # Go toolchain download (bootstrap ставит актуальный Go 1.24 — apt даёт 1.19,
+      # а ducalis-tg требует go 1.24 из go.mod). Also: go-модуль github.com/seniorGolang/tg/v2.
+      - { action: allow, target: go.dev, proto: tcp, port: 443 }
+      - { action: allow, target: dl.google.com, proto: tcp, port: 443 }
+      # Docker: registry (postgres:16, redis:7, kafka — docker pull) + static binary
+      # (bootstrap качает dockerd/docker-compose с download.docker.com в extra_shell)
+      - { action: allow, target: registry-1.docker.io, proto: tcp, port: 443 }
+      - { action: allow, target: auth.docker.io, proto: tcp, port: 443 }
+      - { action: allow, target: production.cloudflare.docker.com, proto: tcp, port: 443 }
+      - { action: allow, target: download.docker.com, proto: tcp, port: 443 }
+      # DNS over TCP (микросандбокс форвардит DNS; пиним надёжные upstream)
+      - { action: allow, target: 1.1.1.1, proto: tcp, port: 53 }
+      - { action: allow, target: 8.8.8.8, proto: tcp, port: 53 }
+      # PyPI — ТОЛЬКО если включаешь loki.dashboard: true (fastapi/uvicorn/…).
+      # По умолчанию закомментировано, т.к. пересборка snapshot дорогая.
+      # - { action: allow, target: pypi.org, proto: tcp, port: 443 }
+      # - { action: allow, target: files.pythonhosted.org, proto: tcp, port: 443 }
+    # Альтернативные DNS: хост-резолверы иногда не резолвят bun.sh и registry-1.docker.io.
+    dns:
+      nameservers: [1.1.1.1, 8.8.8.8]
+      query_timeout_ms: 3000
+
+  init:
+    packages:
+      # Базовые пакеты + docker/docker-compose (для поднятия инфра docker-compose.yaml
+      # проекта прямо внутри VM). python3 нужен loki-mode.
+      apt:
+        - curl
+        - git
+        - ca-certificates
+        - python3
+        - python3-pip
+        - python3-venv
+        - jq
+        - procps
+        - unzip
+        - make            # сборка через `make build` / `make generate`
+        - postgresql-client  # psql для `make migrate-up` / ручных запросов
+      npm_global:
+        - loki-mode
+        - skillkit
+      bun_global:
+        - skillkit
+      # Окружение ducalis-tg:
+      #   1. Go toolchain 1.26.x (apt даёт лишь 1.19, а github.com/seniorGolang/tg/v3
+      #      требует go 1.26). Ставим с go.dev/dl.google.com.
+      #   2. tg v3 CLI: go install github.com/seniorGolang/tg/v3/cmd/tg@latest
+      #      (суффикс /v3 обязателен — без него модуль неразрешим).
+      #   3. Плагины генерации транспорта tgp-go (WASM через wazero):
+      #      astg (@tg-парсер, обязателен) + server (Fiber server generator).
+      #      Ставим через `tg pkg add <repo>:<name> --fail-on-missing` (только нужные;
+      #      без :name собирает все 10 плагинов и виснет). Транспорт достраивается
+      #      через `tg server -o internal/transport` (НЕ v2 `tg transport`).
+      #   4. (tg skills install убран — этой команды НЕТ в tg v3.0.x).
+      #   5. Docker Engine + compose-plugin (для postgres/redis/kafka из docker-compose.yaml).
+      extra_shell: |
+        set -e
+        echo '[bootstrap] Go toolchain 1.26.x (go.dev / dl.google.com)'
+        GO_VER="1.26.5"
+        ARCH="$(uname -m | sed 's/aarch64/arm64/; s/x86_64/amd64/')"
+        curl -fsSL "https://go.dev/dl/go${GO_VER}.linux-${ARCH}.tar.gz" -o /tmp/go.tgz \
+          || curl -fsSL "https://dl.google.com/go/go${GO_VER}.linux-${ARCH}.tar.gz" -o /tmp/go.tgz
+        rm -rf /usr/local/go
+        tar -C /usr/local -xzf /tmp/go.tgz
+        rm -f /tmp/go.tgz
+        ln -sf /usr/local/go/bin/go /usr/local/bin/go
+        ln -sf /usr/local/go/bin/gofmt /usr/local/bin/gofmt
+        /usr/local/go/bin/go version
+
+        echo '[bootstrap] tg v3 CLI + transport plugin (tgp-go)'
+        export PATH="/usr/local/go/bin:$PATH"
+        export GOPATH="${GOPATH:-/root/go}"
+        go install github.com/seniorGolang/tg/v3/cmd/tg@latest
+        ln -sf "$GOPATH/bin/tg" /usr/local/bin/tg
+        tg --version 2>/dev/null || true
+
+        # transport-codegen plugins (WASM, built via wazero — медленный первый build).
+        # Install ONLY what this project needs: astg (the @tg parser, required)
+        # and server (Fiber server generator). NB: a bare `tg pkg add <repo>`
+        # tries to build ALL 10 plugins and hangs; the :<name> suffix selects one.
+        mkdir -p /root/.agents
+        #
+        # tg v3 has a download race-condition (downloadWithProgress returns before
+        # the file is flushed → `Failed to extract archive ...-skills.tar.gz: EOF`)
+        # that fires deterministically under the microsandbox network layer.
+        # NB: `--fail-on-missing` маскирует exit code (tg возвращает 0 даже при
+        # ошибке скачивания), поэтому проверяем факт установки через `tg pkg list`,
+        # а НЕ exit code tg_install_plugins. Только так fallback-патч сработает.
+        tg_install_plugins() {
+          HOME=/root tg pkg add https://github.com/seniorGolang/tgp-go:astg   --fail-on-missing
+          HOME=/root tg pkg add https://github.com/seniorGolang/tgp-go:server --fail-on-missing
+        }
+        tg_plugins_installed() {
+          # оба плагина должны присутствовать в `tg pkg list`
+          local lst; lst=$(HOME=/root tg pkg list 2>/dev/null || true)
+          echo "$lst" | grep -q 'astg' && echo "$lst" | grep -q 'server'
+        }
+        tg_install_plugins
+        if ! tg_plugins_installed; then
+          echo '[bootstrap] tg pkg add hit the download race (astg/server missing); patching + rebuilding tg'
+          rm -rf /tmp/tgsrc && git clone --depth 1 --branch v3.0.5 https://github.com/seniorGolang/tg /tmp/tgsrc
+          # Apply the race-condition fix (drop the `default:` arm in
+          # downloadWithProgress that returns before close(progress) flushes the
+          # downloaded file → extractArchive hits EOF). See tg-patch/README.md.
+          cp /workspace/skills/tg-patch/install.go.patched \
+             /tmp/tgsrc/internal/installer/managers/installation/install.go
+          ( cd /tmp/tgsrc && GOOS=linux GOARCH="${ARCH}" CGO_ENABLED=0 go build -o /usr/local/bin/tg ./cmd/tg )
+          rm -rf /tmp/tgsrc
+          tg_install_plugins || true
+          tg_plugins_installed || echo "[bootstrap] WARN: tg plugins still not installed after patch"
+        fi
+
+        # NB: `tg skills install` НЕ существует в tg v3.0.x (unknown command) — НЕ вызывать.
+
+        echo '[bootstrap] golangci-lint (для `make lint`)'
+        curl -fsSL "https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh" \
+          | sh -s -- -b /usr/local/bin v1.62.0 || echo '[bootstrap] WARN: golangci-lint install failed'
+
+        echo '[bootstrap] Docker Engine + compose plugin (для docker-compose.yaml проекта)'
+        # msb VM — debian, без systemd; ставим статический docker binary + compose.
+        # ВАЖНО: download.docker.com использует директорию `aarch64` (НЕ `arm64`),
+        # хотя Go/tg хотят `arm64`. Поэтому отдельная переменная для docker-путей.
+        DOCKER_ARCH="aarch64"
+        [ "$ARCH" = "amd64" ] && DOCKER_ARCH="x86_64"
+        curl -fsSL "https://download.docker.com/linux/static/stable/${DOCKER_ARCH}/docker-27.3.1.tgz" \
+          -o /tmp/docker.tgz
+        # Извлекаем весь docker/ целиком: перечисление файлов с glob (containerd-shim*)
+        # падает на BSD-tar без --wildcards, а явные имена хрупки к смене структуры архива.
+        # strip-components=1 убирает префикс docker/ → бинарники прямо в /tmp/.
+        tar -C /tmp -xzf /tmp/docker.tgz --strip-components=1
+        mv /tmp/docker* /tmp/containerd* /tmp/runc /tmp/ctr /usr/local/bin/ 2>/dev/null || true
+        rm -f /tmp/docker.tgz
+        mkdir -p /usr/local/lib/docker/cli-plugins
+        curl -fsSL "https://github.com/docker/compose/releases/download/v2.30.3/docker-compose-linux-${DOCKER_ARCH}" \
+          -o /usr/local/lib/docker/cli-plugins/docker-compose
+        chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+        ln -sf /usr/local/lib/docker/cli-plugins/docker-compose /usr/local/bin/docker-compose
+        # dockerd без systemd: запускаем один раз в фоне (rootless не нужен — bootstrap под root).
+        nohup dockerd --host=unix:///var/run/docker.sock \
+               --storage-driver=overlay2 >/tmp/dockerd.log 2>&1 &
+        # даём демону подняться (первый запуск инициализирует /var/lib/docker)
+        for i in $(seq 1 30); do docker info >/dev/null 2>&1 && break; sleep 1; done
+        docker version --format '{{.Server.Version}}' 2>/dev/null || echo '[bootstrap] WARN: dockerd not ready'
+
+        # The agent runs as the unprivileged `loki` user. tg plugins live under
+        # /root/.tg + /root/.agents (HOME-scoped). Mirror them for loki so
+        # `tg server` / `tg client-go` / `tg pkg list` work in the loki session too.
+        # loki должен уметь запускать `docker`/`make`/`go`/`tg` — кладём в группу docker.
+        groupadd -f docker || true
+        usermod -aG docker loki 2>/dev/null || true
+        install -d -o loki -g loki /home/loki/go /home/loki/.cache /home/loki/go/bin
+        for tgt in /home/loki/.tg /home/loki/.agents; do
+          src="/root${tgt#/home/loki}"
+          if [ -e "$src" ]; then cp -a "$src" "$tgt"; fi
+        done
+        # tg binary — тоже в PATH loki
+        cp -a "$GOPATH/bin/tg" /home/loki/go/bin/tg 2>/dev/null || true
+        chown -R loki:loki /home/loki/go /home/loki/.cache /home/loki/.tg /home/loki/.agents 2>/dev/null || true
+
+        # --- git-daemon: read-only server exposing /workspace on :9418 ---
+        # Lets the host pull loki's work (vm/<sandbox> branch) without msb cp:
+        #   git fetch git://localhost:9418/ vm/ducalis-build   (run on the host)
+        # --export-all: serve repos without a git-daemon-export-ok marker.
+        # --listen=0.0.0.0: REQUIRED — msb port-forward reaches the VM on eth0,
+        #   not loopback; binding 127.0.0.1 makes the daemon look up but every
+        #   host fetch hangs (тот же урок, что и для app-сервисов на :8080).
+        # Started as loki (owns /workspace); harmless if /workspace is not yet a repo.
+        runuser -u loki -- bash -c '
+          cd /workspace 2>/dev/null || exit 0
+          nohup git daemon --reuseaddr --base-path=/workspace --export-all \
+                   --listen=0.0.0.0 --port=9418 >/tmp/git-daemon.log 2>&1 &
+        ' || true
+
+    snapshot:
+      # --- APPLY mode (active): boot from the pre-built snapshot ---
+      from_snapshot: mcd-base
+      # --- BUILD mode: set enabled: true (and comment from_snapshot) to recapture.
+      #     Используй build.yaml рядом — там enabled: true готов под `microcode build`.
+      # enabled: true
+      name: mcd-base
+
+  mounts:
+    # overlay скилл-модули loki — ДОПОЛНЯТ/ПЕРЕОПРЕДЕЛЯЮТ встроенные.
+    # loki читает /workspace/skills/00-index.md → грузит наши модули по фазе.
+    # Этот mount СОХРАНЯЕТСЯ при sync.enabled=true: clone уважает nested mount
+    # points (find ... -path {dest}/skills -prune) — skills/ не затирается.
+    - { host: ./custom-skills, dest: /workspace/skills, readonly: false }
+    # ВАЖНО: PRD НЕ монтируется отдельным mount — он живёт в самом репо
+    # (microcode/PRD.md, запушен в origin/master) и приходит в /workspace через
+    # sandbox.sync git-clone. Отдельный mount PRD конфликтовал с clone: clone
+    # очищает /workspace (find ... -exec rm), а примонтированный файл удалить
+    # нельзя (Device or resource busy). loki запускается с --prd microcode/PRD.md.
+    # mount `./src → /workspace` также отсутствует — workspace наполняется clone.
+
+  ports:
+    - "8080:8080"                    # public API (server-public) — health/REST
+    - "8082:8082"                    # admin API (server-admin)
+    - "8083:8083"                    # internal API (server-internal)
+    - "9090:9090"                    # prometheus metrics (config.yaml metrics_bind)
+    - "8081:8081"                    # kafka-ui (из docker-compose, host 8081→guest 8080)
+    - "9418:9418"                    # git-daemon (read-only): host pulls loki result via git://localhost:9418/
+
+  # Git-clone workspace provisioning (вместо bind-mount/seed).
+  # microcode клонирует remote в /workspace (build и apply), подавляя mount для
+  # sync.dest. Это даёт VM shared git history → loki коммитит на vm/<sandbox>
+  # поверх существующей истории, host забирает результат через git fetch+merge
+  # (git-daemon :9418) без "unrelated histories" и без ручного msb cp.
+  #
+  # Git-хост (github.com) auto-allowlisted через sync_egress_rules() — отдельная
+  # запись в network.allow не нужна (но github.com уже там для skillkit/go-modules).
+  #
+  # Репо ducalis-tg ПУБЛИЧНЫЙ → auth НЕ нужен (анонимный HTTPS clone работает без
+  # PAT). Если станет приватным — раскомментируй auth + задай PAT на хосте:
+  #   export GH_TOKEN=ghp_...
+  sync:
+    enabled: true
+    remote_url: https://github.com/sah4ez/ducalis-tg.git
+    branch: master                   # целевая ветка синхронизации (дефолтная репо)
+    dest: /workspace                 # mount для этого dest подавляется автоматически
+    depth: 1                         # shallow clone (быстрее; 0 = полная история)
+    # auth:                          # публичный репо — НЕ нужен; раскомментируй для приватного
+    #   method: https
+    #   token_env: GH_TOKEN          # host env var с PAT (значение НЕ инлайнится)

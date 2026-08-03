@@ -1,0 +1,260 @@
+# microcode — BUILD-вариант манифеста ducalis-tg.
+#
+# Единственное отличие от platform.yaml: snapshot.enabled: true (вместо
+# from_snapshot). Используй ОДИН РАЗ для построения базового snapshot, потом
+# вернись к platform.yaml (там from_snapshot: mcd-base) для быстрых apply.
+#
+# Workflow (подробно — README.md рядом):
+#   conda activate mcd
+#
+#   # 1) ONE-TIME: построить snapshot (bootstrap ~20-30 мин на arm64)
+#   microcode build microcode/build.yaml
+#   #    -> snapshot 'mcd-base' (Go 1.24 + tg v2 + docker + node/loki/cline)
+#
+#   # 2) Дальше всегда apply из snapshot (секунды):
+#   microcode apply microcode/platform.yaml --prd microcode/PRD.md
+#
+#   # 3) (опц.) перенос snapshot на другую машину:
+#   microcode snapshot save mcd-base mcd-base.tar.zst
+#   scp mcd-base.tar.zst host2:
+#   microcode snapshot load mcd-base.tar.zst
+#
+# Этот файл — копия platform.yaml, меняем ТОЛЬКО секцию snapshot.
+# Остальные секции не дублируем, чтобы не было расхождений: при изменении
+# platform.yaml синхронизируй сюда network/init/mounts вручную.
+
+version: 1
+
+project:
+  name: ducalis-tg
+  workdir: /workspace
+  state_dir: .microcode
+
+skills:
+  in_vm: true
+  agents: [cline]
+  install:
+    - source: obra/superpowers
+      skills:
+        - test-driven-development
+        - systematic-debugging
+        - verification-before-completion
+        - writing-plans
+        - executing-plans
+  translate:
+    target_agent: cline
+    output_dir: .skills-generated
+    also_into_memory: true
+
+loki:
+  provider: cline
+  model: glm-5.2
+  max_iterations: 25
+  max_budget_usd: 8.0
+  effort: high
+  dashboard: false
+  sdk_mode: full
+  quality_gates:
+    enabled: true
+    opt_out: [magic_debate]
+  memory:
+    enabled: true
+    managed: true
+    storage:
+      enabled: true
+      volume: loki-memory
+      dest: /data/loki-memory
+  proofs:
+    enabled: true
+  provider_clis: [cline]
+  config_overrides:
+    start_phase: DEVELOPMENT
+
+sandbox:
+  image: debian
+  tag: bookworm-slim
+  name: ducalis-build
+  cpus: 4
+  memory: 8192
+  root_disk: 12G
+
+  network:
+    mode: allowlist
+    default_egress: deny
+    allow:
+      - { action: allow, target: api.z.ai, proto: tcp, port: 443 }
+      - { action: allow, target: "*.z.ai", proto: tcp, port: 443 }
+      - { action: allow, target: deb.debian.org, proto: tcp, port: 443 }
+      - { action: allow, target: "*.debian.org", proto: tcp, port: 443 }
+      - { action: allow, target: "*.debian.org", proto: tcp, port: 80 }
+      - { action: allow, target: registry.npmjs.org, proto: tcp, port: 443 }
+      - { action: allow, target: "*.npmjs.org", proto: tcp, port: 443 }
+      # Node.js tarballs — bootstrap ставит node 22 через `n install 22`.
+      - { action: allow, target: nodejs.org, proto: tcp, port: 443 }
+      - { action: allow, target: "*.nodejs.org", proto: tcp, port: 443 }
+      - { action: allow, target: bun.sh, proto: tcp, port: 443 }
+      - { action: allow, target: github.com, proto: tcp, port: 443 }
+      - { action: allow, target: codeload.github.com, proto: tcp, port: 443 }
+      - { action: allow, target: release-assets.githubusercontent.com, proto: tcp, port: 443 }
+      - { action: allow, target: objects.githubusercontent.com, proto: tcp, port: 443 }
+      - { action: allow, target: raw.githubusercontent.com, proto: tcp, port: 443 }
+      - { action: allow, target: proxy.golang.org, proto: tcp, port: 443 }
+      - { action: allow, target: "*.golang.org", proto: tcp, port: 443 }
+      - { action: allow, target: sum.golang.org, proto: tcp, port: 443 }
+      - { action: allow, target: storage.googleapis.com, proto: tcp, port: 443 }
+      - { action: allow, target: "*.googleapis.com", proto: tcp, port: 443 }
+      - { action: allow, target: "*.pkg.go.dev", proto: tcp, port: 443 }
+      - { action: allow, target: go.dev, proto: tcp, port: 443 }
+      - { action: allow, target: dl.google.com, proto: tcp, port: 443 }
+      - { action: allow, target: registry-1.docker.io, proto: tcp, port: 443 }
+      - { action: allow, target: auth.docker.io, proto: tcp, port: 443 }
+      - { action: allow, target: production.cloudflare.docker.com, proto: tcp, port: 443 }
+      - { action: allow, target: download.docker.com, proto: tcp, port: 443 }
+      - { action: allow, target: 1.1.1.1, proto: tcp, port: 53 }
+      - { action: allow, target: 8.8.8.8, proto: tcp, port: 53 }
+    dns:
+      nameservers: [1.1.1.1, 8.8.8.8]
+      query_timeout_ms: 3000
+
+  init:
+    packages:
+      apt:
+        - curl
+        - git
+        - ca-certificates
+        - python3
+        - python3-pip
+        - python3-venv
+        - jq
+        - procps
+        - unzip
+        - make
+        - postgresql-client
+      npm_global:
+        - loki-mode
+        - skillkit
+      bun_global:
+        - skillkit
+      extra_shell: |
+        set -e
+        echo '[bootstrap] Go toolchain 1.26.x (go.dev / dl.google.com)'
+        GO_VER="1.26.5"
+        ARCH="$(uname -m | sed 's/aarch64/arm64/; s/x86_64/amd64/')"
+        curl -fsSL "https://go.dev/dl/go${GO_VER}.linux-${ARCH}.tar.gz" -o /tmp/go.tgz \
+          || curl -fsSL "https://dl.google.com/go/go${GO_VER}.linux-${ARCH}.tar.gz" -o /tmp/go.tgz
+        rm -rf /usr/local/go
+        tar -C /usr/local -xzf /tmp/go.tgz
+        rm -f /tmp/go.tgz
+        ln -sf /usr/local/go/bin/go /usr/local/bin/go
+        ln -sf /usr/local/go/bin/gofmt /usr/local/bin/gofmt
+        /usr/local/go/bin/go version
+
+        echo '[bootstrap] tg v3 CLI + transport plugin (tgp-go)'
+        export PATH="/usr/local/go/bin:$PATH"
+        export GOPATH="${GOPATH:-/root/go}"
+        go install github.com/seniorGolang/tg/v3/cmd/tg@v3.0.5
+        ln -sf "$GOPATH/bin/tg" /usr/local/bin/tg
+        tg --version 2>/dev/null || true
+
+        # transport-codegen plugins (WASM via wazero). astg (@tg-парсер) + server (Fiber).
+        # :<name> суффикс выбирает один плагин; без него собирает все 10 и виснет.
+        # `--fail-on-missing` маскирует exit code → проверяем установку через tg pkg list.
+        mkdir -p /root/.agents
+        tg_install_plugins() {
+          HOME=/root tg pkg add https://github.com/seniorGolang/tgp-go:astg   --fail-on-missing
+          HOME=/root tg pkg add https://github.com/seniorGolang/tgp-go:server --fail-on-missing
+        }
+        tg_plugins_installed() {
+          local lst; lst=$(HOME=/root tg pkg list 2>/dev/null || true)
+          echo "$lst" | grep -q 'astg' && echo "$lst" | grep -q 'server'
+        }
+        tg_install_plugins
+        if ! tg_plugins_installed; then
+          echo '[bootstrap] tg pkg add hit the download race; patching + rebuilding tg'
+          rm -rf /tmp/tgsrc && git clone --depth 1 --branch v3.0.5 https://github.com/seniorGolang/tg /tmp/tgsrc
+          cp /workspace/skills/tg-patch/install.go.patched \
+             /tmp/tgsrc/internal/installer/managers/installation/install.go
+          ( cd /tmp/tgsrc && GOOS=linux GOARCH="${ARCH}" CGO_ENABLED=0 go build -o /usr/local/bin/tg ./cmd/tg )
+          rm -rf /tmp/tgsrc
+          tg_install_plugins || true
+          tg_plugins_installed || echo "[bootstrap] WARN: tg plugins still not installed"
+        fi
+
+        # NB: `tg skills install` НЕ существует в tg v3.0.x — НЕ вызывать.
+
+        echo '[bootstrap] golangci-lint (для `make lint`)'
+        curl -fsSL "https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh" \
+          | sh -s -- -b /usr/local/bin v1.62.0 || echo '[bootstrap] WARN: golangci-lint install failed'
+
+        echo '[bootstrap] Docker Engine + compose plugin (для docker-compose.yaml проекта)'
+        # download.docker.com использует `aarch64` (НЕ `arm64`); Go/tg хотят `arm64`.
+        DOCKER_ARCH="aarch64"
+        [ "$ARCH" = "amd64" ] && DOCKER_ARCH="x86_64"
+        curl -fsSL "https://download.docker.com/linux/static/stable/${DOCKER_ARCH}/docker-27.3.1.tgz" \
+          -o /tmp/docker.tgz
+        # Извлекаем весь docker/ целиком (glob containerd-shim* падает на BSD-tar без --wildcards).
+        tar -C /tmp -xzf /tmp/docker.tgz --strip-components=1
+        mv /tmp/docker* /tmp/containerd* /tmp/runc /tmp/ctr /usr/local/bin/ 2>/dev/null || true
+        rm -f /tmp/docker.tgz
+        mkdir -p /usr/local/lib/docker/cli-plugins
+        curl -fsSL "https://github.com/docker/compose/releases/download/v2.30.3/docker-compose-linux-${DOCKER_ARCH}" \
+          -o /usr/local/lib/docker/cli-plugins/docker-compose
+        chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+        ln -sf /usr/local/lib/docker/cli-plugins/docker-compose /usr/local/bin/docker-compose
+        nohup dockerd --host=unix:///var/run/docker.sock \
+               --storage-driver=overlay2 >/tmp/dockerd.log 2>&1 &
+        for i in $(seq 1 30); do docker info >/dev/null 2>&1 && break; sleep 1; done
+        docker version --format '{{.Server.Version}}' 2>/dev/null || echo '[bootstrap] WARN: dockerd not ready'
+
+        # Mirror tg plugins (HOME-scoped /root/.tg + /root/.agents) → loki user.
+        groupadd -f docker || true
+        usermod -aG docker loki 2>/dev/null || true
+        install -d -o loki -g loki /home/loki/go /home/loki/.cache /home/loki/go/bin
+        for tgt in /home/loki/.tg /home/loki/.agents; do
+          src="/root${tgt#/home/loki}"
+          if [ -e "$src" ]; then cp -a "$src" "$tgt"; fi
+        done
+        cp -a "$GOPATH/bin/tg" /home/loki/go/bin/tg 2>/dev/null || true
+        chown -R loki:loki /home/loki/go /home/loki/.cache /home/loki/.tg /home/loki/.agents 2>/dev/null || true
+
+        runuser -u loki -- bash -c '
+          cd /workspace 2>/dev/null || exit 0
+          nohup git daemon --reuseaddr --base-path=/workspace --export-all \
+                   --listen=0.0.0.0 --port=9418 >/tmp/git-daemon.log 2>&1 &
+        ' || true
+
+    snapshot:
+      # --- BUILD mode (active): один раз построить snapshot, потом apply из него ---
+      enabled: true
+      name: mcd-base
+      # from_snapshot: mcd-base
+      # --- APPLY mode: после build закомментируй enabled и раскомментируй from_snapshot,
+      #     либо просто используй platform.yaml (там уже from_snapshot).
+
+  mounts:
+    # overlay skills — сохраняется при sync (clone prune'нет /workspace/skills).
+    - { host: ./custom-skills, dest: /workspace/skills, readonly: false }
+    # PRD НЕ монтируется — живёт в репо (microcode/PRD.md, в origin/master),
+    # приходит в /workspace через sync.clone. --prd microcode/PRD.md.
+    # mount `./src → /workspace` отсутствует — workspace наполняется clone.
+
+  ports:
+    - "8080:8080"
+    - "8082:8082"
+    - "8083:8083"
+    - "9090:9090"
+    - "8081:8081"
+    - "9418:9418"
+
+  # Git-clone workspace (вместо bind-mount/seed). microcode клонирует remote в
+  # /workspace, давая shared history. Держите build.yaml синхронным с platform.yaml
+  # по секциям network/init/mounts/sync — отличаются только snapshot (enabled vs from_snapshot).
+  sync:
+    enabled: true
+    remote_url: https://github.com/sah4ez/ducalis-tg.git
+    branch: master
+    dest: /workspace
+    depth: 1
+    # auth:                          # публичный репо — не нужен
+    #   method: https
+    #   token_env: GH_TOKEN
