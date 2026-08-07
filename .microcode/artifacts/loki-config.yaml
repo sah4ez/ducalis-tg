@@ -1,0 +1,17 @@
+provider: cline
+effort: high
+max_iterations: 25
+max_budget_usd: 8.0
+sdk_mode: full
+quality_gates:
+  enabled: true
+  opt_out:
+  - magic_debate
+  - code_review
+memory:
+  enabled: true
+  managed: true
+proofs:
+  enabled: true
+model: glm-5-turbo
+start_phase: DEVELOPMENT
