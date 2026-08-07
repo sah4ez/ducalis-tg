@@ -1,16 +1,15 @@
 package main
 
 import (
-	"database/sql"
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/gofiber/fiber/v2/middleware/cors"
-	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/rs/zerolog"
+
+	"github.com/sah4ez/ducalis-tg/internal/service"
+	"github.com/sah4ez/ducalis-tg/internal/storage/postgres"
 )
 
 // Version is set during build
@@ -23,34 +22,26 @@ func main() {
 
 	// Database connection
 	dbURL := getEnv("DATABASE_URL", "postgres://ducalis:ducalis123@localhost:5432/ducalis?sslmode=disable")
-	db, err := connectDB(dbURL)
+	db, err := postgres.New(dbURL)
 	if err != nil {
 		logger.Fatal().Err(err).Msg("failed to connect to database")
 	}
 	defer db.Close()
 	logger.Info().Msg("connected to database")
 
-	// Initialize admin services
-	// TODO: Implement stores and services
-	// adminStore := postgres.NewAdminStore(db)
-	// adminSvc := service.NewAdminService(adminStore, logger)
-	// adminAuthSvc := service.NewAdminAuthService(adminStore, logger, getEnv("ADMIN_JWT_SECRET", "secret"))
+	// Initialize repositories
+	userRepo := postgres.NewUserRepository(db)
+	workspaceRepo := postgres.NewWorkspaceRepository(db)
 
-	// Create fiber app
+	// Initialize admin service
+	adminSvc := service.NewAdminService(userRepo, workspaceRepo, logger)
+
+	// Admin API has no tg-generated transport (no AdminService contract).
+	// Use fiber directly for admin endpoints.
 	app := fiber.New(fiber.Config{
 		AppName:               "Ducalis Admin API",
-		ReadTimeout:           30 * time.Second,
-		WriteTimeout:          30 * time.Second,
-		IdleTimeout:           120 * time.Second,
-		DisableStartupMessage: false,
+		DisableStartupMessage: true,
 	})
-
-	app.Use(recover.New())
-	app.Use(cors.New(cors.Config{
-		AllowOrigins: "*",
-		AllowMethods: "GET,POST,PUT,PATCH,DELETE,OPTIONS",
-		AllowHeaders: "Origin,Content-Type,Accept,Authorization,X-Request-ID",
-	}))
 
 	// Health check
 	app.Get("/health", func(c *fiber.Ctx) error {
@@ -61,26 +52,35 @@ func main() {
 		})
 	})
 
-	// API info
-	app.Get("/", func(c *fiber.Ctx) error {
-		return c.JSON(fiber.Map{
-			"service": "Ducalis Admin API",
-			"version": Version,
-			"endpoints": []string{
-				"POST /admin/v1/auth/login",
-				"GET  /admin/v1/users",
-				"GET  /admin/v1/users/:id",
-				"POST /admin/v1/users/:id/ban",
-				"GET  /admin/v1/workspaces",
-				"GET  /admin/v1/stats",
-				"GET  /admin/v1/audit-log",
-			},
-		})
+	// Admin endpoints
+	app.Get("/admin/v1/users", func(c *fiber.Ctx) error {
+		limit := c.QueryInt("limit", 50)
+		offset := c.QueryInt("offset", 0)
+		search := c.Query("search", "")
+		users, total, err := adminSvc.ListUsers(c.UserContext(), limit, offset, search)
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.JSON(fiber.Map{"users": users, "total": total})
 	})
 
-	// TODO: Register tg-generated handlers
-	// server := transport.New(logger, transport.WithAdminService(adminSvc))
-	// server.RegisterHandlers(app)
+	app.Get("/admin/v1/workspaces", func(c *fiber.Ctx) error {
+		limit := c.QueryInt("limit", 50)
+		offset := c.QueryInt("offset", 0)
+		workspaces, total, err := adminSvc.ListWorkspaces(c.UserContext(), limit, offset)
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.JSON(fiber.Map{"workspaces": workspaces, "total": total})
+	})
+
+	app.Get("/admin/v1/stats", func(c *fiber.Ctx) error {
+		stats, err := adminSvc.GetSystemStats(c.UserContext())
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.JSON(stats)
+	})
 
 	// Graceful shutdown
 	quit := make(chan os.Signal, 1)
@@ -97,6 +97,7 @@ func main() {
 
 	<-quit
 	logger.Info().Msg("shutting down...")
+	_ = app.Shutdown()
 }
 
 func getEnv(key, fallback string) string {
@@ -104,9 +105,4 @@ func getEnv(key, fallback string) string {
 		return value
 	}
 	return fallback
-}
-
-func connectDB(url string) (*sql.DB, error) {
-	// TODO: Implement database connection
-	return nil, nil
 }

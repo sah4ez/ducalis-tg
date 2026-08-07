@@ -1,16 +1,14 @@
 .PHONY: all install-tg generate transport client client-go client-ts swagger build build-public build-admin build-internal run clean docker-up docker-down test lint help
 
 # Directories
-PUBLIC_CONTRACT := ./pkg/contract/public
-ADMIN_CONTRACT := ./pkg/contract/admin
-INTERNAL_CONTRACT := ./pkg/contract/internal
+CONTRACT_DIR := ./pkg/contract
 TRANSPORT_DIR := ./internal/transport
 CLIENT_DIR := ./pkg/client
 API_DIR := ./api
 
 # Install tg generator
 install-tg:
-	go install github.com/seniorGolang/tg/v2/cmd/tg@latest
+	go install github.com/seniorGolang/tg/v3/cmd/tg@latest
 
 # Generate all (transport, clients, swagger)
 generate: transport client swagger
@@ -19,12 +17,8 @@ generate: transport client swagger
 
 # Generate transport layer for all services
 transport:
-	@echo "Generating transport for public API..."
-	tg transport --services $(PUBLIC_CONTRACT) --out $(TRANSPORT_DIR)/public
-	@echo "Generating transport for admin API..."
-	tg transport --services $(ADMIN_CONTRACT) --out $(TRANSPORT_DIR)/admin
-	@echo "Generating transport for internal API..."
-	tg transport --services $(INTERNAL_CONTRACT) --out $(TRANSPORT_DIR)/internal
+	@echo "Generating transport layer..."
+	tg server --contracts-dir $(CONTRACT_DIR) -o $(TRANSPORT_DIR)
 
 # Generate all clients
 client: client-go client-ts
@@ -32,23 +26,19 @@ client: client-go client-ts
 # Generate Go client (public API only)
 client-go:
 	@echo "Generating Go client..."
-	tg client -go --services $(PUBLIC_CONTRACT) --outPath $(CLIENT_DIR)/go
-	goimports -l -w $(CLIENT_DIR)/go 2>/dev/null || true
+	tg client-go --contracts-dir $(CONTRACT_DIR) -o $(CLIENT_DIR)/go
+	goimports -l -w $(CLIENT_DIR) 2>/dev/null || true
 
 # Generate TypeScript client (public API only)
 client-ts:
 	@echo "Generating TypeScript client..."
-	tg client -js --services $(PUBLIC_CONTRACT) --outPath $(CLIENT_DIR)/ts
+	tg client-ts --contracts-dir $(CONTRACT_DIR) -o $(CLIENT_DIR)/ts
 
 # Generate OpenAPI specs for all services
 swagger:
-	@echo "Generating OpenAPI spec for public API..."
+	@echo "Generating OpenAPI spec..."
 	mkdir -p $(API_DIR)
-	tg swagger --services $(PUBLIC_CONTRACT) --outFile $(API_DIR)/swagger-public.yaml
-	@echo "Generating OpenAPI spec for admin API..."
-	tg swagger --services $(ADMIN_CONTRACT) --outFile $(API_DIR)/swagger-admin.yaml
-	@echo "Generating OpenAPI spec for internal API..."
-	tg swagger --services $(INTERNAL_CONTRACT) --outFile $(API_DIR)/swagger-internal.yaml
+	tg server --contracts-dir $(CONTRACT_DIR) -o $(API_DIR)
 
 # Build all binaries
 build: build-public build-admin build-internal
@@ -131,9 +121,7 @@ lint:
 # Clean build artifacts
 clean:
 	rm -rf bin/
-	rm -rf $(TRANSPORT_DIR)/public
-	rm -rf $(TRANSPORT_DIR)/admin
-	rm -rf $(TRANSPORT_DIR)/internal
+	find $(TRANSPORT_DIR) -maxdepth 1 -name '*.go' -delete
 
 # Download dependencies
 deps:

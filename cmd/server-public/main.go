@@ -1,16 +1,17 @@
 package main
 
 import (
-	"database/sql"
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/gofiber/fiber/v2/middleware/cors"
-	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/rs/zerolog"
+
+	"github.com/sah4ez/ducalis-tg/internal/adapter"
+	"github.com/sah4ez/ducalis-tg/internal/service"
+	"github.com/sah4ez/ducalis-tg/internal/storage/postgres"
+	"github.com/sah4ez/ducalis-tg/internal/transport"
 )
 
 // Version is set during build
@@ -23,40 +24,42 @@ func main() {
 
 	// Database connection
 	dbURL := getEnv("DATABASE_URL", "postgres://ducalis:ducalis123@localhost:5432/ducalis?sslmode=disable")
-	db, err := connectDB(dbURL)
+	db, err := postgres.New(dbURL)
 	if err != nil {
 		logger.Fatal().Err(err).Msg("failed to connect to database")
 	}
 	defer db.Close()
 	logger.Info().Msg("connected to database")
 
+	jwtSecret := getEnv("JWT_SECRET", "change-me-in-production")
+
+	// Initialize repositories
+	userRepo := postgres.NewUserRepository(db)
+	workspaceRepo := postgres.NewWorkspaceRepository(db)
+	memberRepo := postgres.NewMemberRepository(db)
+	taskRepo := postgres.NewTaskRepository(db)
+	voteRepo := postgres.NewVoteRepository(db)
+	estimationRepo := postgres.NewEstimationRepository(db)
+
 	// Initialize services
-	// TODO: Implement stores
-	// workspaceStore := postgres.NewWorkspaceStore(db)
-	// taskStore := postgres.NewTaskStore(db)
-	// authStore := postgres.NewAuthStore(db)
-	
-	// workspaceSvc := service.NewWorkspaceService(workspaceStore, logger)
-	// taskSvc := service.NewTaskService(taskStore, logger)
-	// authSvc := service.NewAuthService(authStore, logger, getEnv("JWT_SECRET", "secret"))
+	authSvc := service.NewAuthService(userRepo, logger, jwtSecret)
+	workspaceSvc := service.NewWorkspaceService(workspaceRepo, memberRepo, userRepo, logger)
+	taskSvc := service.NewTaskService(taskRepo, workspaceRepo, voteRepo, estimationRepo, logger)
 
-	// Create fiber app
-	app := fiber.New(fiber.Config{
-		AppName:               "Ducalis Public API",
-		ReadTimeout:           30 * time.Second,
-		WriteTimeout:          30 * time.Second,
-		IdleTimeout:           120 * time.Second,
-		DisableStartupMessage: false,
-	})
+	// Create adapters (bridge between contract interfaces and service implementations)
+	authAdapter := adapter.NewAuthAdapter(authSvc)
+	workspaceAdapter := adapter.NewWorkspaceAdapter(workspaceSvc)
+	taskAdapter := adapter.NewTaskAdapter(taskSvc)
 
-	app.Use(recover.New())
-	app.Use(cors.New(cors.Config{
-		AllowOrigins: "*",
-		AllowMethods: "GET,POST,PUT,PATCH,DELETE,OPTIONS",
-		AllowHeaders: "Origin,Content-Type,Accept,Authorization,X-Request-ID",
-	}))
+	// Build tg-generated transport server
+	srv := transport.New(logger,
+		transport.AuthService(transport.NewAuthService(authAdapter)),
+		transport.WorkspaceService(transport.NewWorkspaceService(workspaceAdapter)),
+		transport.TaskService(transport.NewTaskService(taskAdapter)),
+	)
 
-	// Health check
+	// Add health check
+	app := srv.Fiber()
 	app.Get("/health", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{
 			"status":  "ok",
@@ -64,28 +67,6 @@ func main() {
 			"service": "public",
 		})
 	})
-
-	// API info
-	app.Get("/", func(c *fiber.Ctx) error {
-		return c.JSON(fiber.Map{
-			"service": "Ducalis Public API",
-			"version": Version,
-			"endpoints": []string{
-				"POST /api/v1/auth/register",
-				"POST /api/v1/auth/login",
-				"GET  /api/v1/workspaces",
-				"POST /api/v1/workspaces",
-				"GET  /api/v1/tasks",
-				"POST /api/v1/tasks",
-				"PUT  /api/v1/tasks/:id/scores",
-				"POST /api/v1/tasks/:id/vote",
-			},
-		})
-	})
-
-	// TODO: Register tg-generated handlers
-	// server := transport.New(logger, transport.WithWorkspaceService(workspaceSvc))
-	// server.RegisterHandlers(app)
 
 	// Graceful shutdown
 	quit := make(chan os.Signal, 1)
@@ -102,6 +83,7 @@ func main() {
 
 	<-quit
 	logger.Info().Msg("shutting down...")
+	srv.Shutdown()
 }
 
 func getEnv(key, fallback string) string {
@@ -109,9 +91,4 @@ func getEnv(key, fallback string) string {
 		return value
 	}
 	return fallback
-}
-
-func connectDB(url string) (*sql.DB, error) {
-	// TODO: Implement database connection
-	return nil, nil
 }
