@@ -22,24 +22,24 @@ Three independent API services:
 2. **Admin API** (port 8082) - System administration with separate auth
 3. **Internal API** (port 8083) - Service-to-service with API key auth
 
-## 🚀 Quick Start
+## Quick Start
 
 ```bash
 # Clone repository
 git clone https://github.com/sah4ez/ducalis-tg.git
 cd ducalis-tg
 
-# Install tg generator
-go install github.com/seniorGolang/tg/v2/cmd/tg@latest
+# Start infrastructure (PostgreSQL, Redis, Kafka)
+docker-compose up -d postgres redis
 
-# Generate transport layer and clients
-make generate
+# Build all services
+make build
 
-# Start infrastructure
-make docker-up
-
-# Run server
-make run
+# Run services (each in its own terminal)
+JWT_SECRET=change-me ./bin/server-public       # Public API :8080
+ADMIN_JWT_SECRET=change-me ./bin/server-admin   # Admin API :8082
+INTERNAL_API_KEY=change-me ./bin/server-internal # Internal API :8083
+```
 ```
 
 Services will start on:
@@ -50,7 +50,7 @@ Services will start on:
 
 ## 🛠 Tech Stack
 
-- **Backend**: Go 1.24 with [tg](https://github.com/seniorGolang/tg) code generator
+- **Backend**: Go 1.26 with [tg](https://github.com/seniorGolang/tg) code generator (v3)
 - **Transport**: JSON-RPC 2.0 + HTTP (go-fiber)
 - **Database**: PostgreSQL 16
 - **Cache**: Redis 7
