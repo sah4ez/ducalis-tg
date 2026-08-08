@@ -40,7 +40,6 @@ JWT_SECRET=change-me ./bin/server-public       # Public API :8080
 ADMIN_JWT_SECRET=change-me ./bin/server-admin   # Admin API :8082
 INTERNAL_API_KEY=change-me ./bin/server-internal # Internal API :8083
 ```
-```
 
 Services will start on:
 - Public API: http://localhost:8080
