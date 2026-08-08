@@ -94,6 +94,7 @@ loki:
     enabled: true
     opt_out:
       - magic_debate                 # нет UI — Gate 8 не нужен
+      - code_review                  # GLM не отвечает на review-промпты ~85KB → зависание. Включить после миграции на более мощную модель.
   memory:
     enabled: true
     managed: true

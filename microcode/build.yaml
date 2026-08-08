@@ -48,7 +48,7 @@ skills:
 
 loki:
   provider: cline
-  model: glm-5.2
+  model: glm-5-turbo
   max_iterations: 25
   max_budget_usd: 8.0
   effort: high
@@ -56,7 +56,7 @@ loki:
   sdk_mode: full
   quality_gates:
     enabled: true
-    opt_out: [magic_debate]
+    opt_out: [magic_debate, code_review]   # code_review: GLM виснет на ~85KB промптах → зависание
   memory:
     enabled: true
     managed: true
@@ -152,31 +152,58 @@ sandbox:
         echo '[bootstrap] tg v3 CLI + transport plugin (tgp-go)'
         export PATH="/usr/local/go/bin:$PATH"
         export GOPATH="${GOPATH:-/root/go}"
-        go install github.com/seniorGolang/tg/v3/cmd/tg@v3.0.5
-        ln -sf "$GOPATH/bin/tg" /usr/local/bin/tg
+        # Build tg from source (git clone + go build) — pins the exact version
+        # (v3.0.5 tag) and lets us iterate on fixes. The stock `go install @latest`
+        # binary hits a download race-condition (`Failed to extract archive
+        # ...-skills.tar.gz: EOF`) under the microsandbox network layer; building
+        # from source is more stable and we capture a full debug trace on failure
+        # for the upstream issue report.
+        TG_TAG="v3.0.5"
+        rm -rf /tmp/tgsrc
+        git clone --depth 1 --branch "$TG_TAG" https://github.com/seniorGolang/tg /tmp/tgsrc
+        ( cd /tmp/tgsrc && CGO_ENABLED=0 go build -o /usr/local/bin/tg ./cmd/tg )
+        rm -rf /tmp/tgsrc
+        chmod +x /usr/local/bin/tg
         tg --version 2>/dev/null || true
 
-        # transport-codegen plugins (WASM via wazero). astg (@tg-парсер) + server (Fiber).
-        # :<name> суффикс выбирает один плагин; без него собирает все 10 и виснет.
-        # `--fail-on-missing` маскирует exit code → проверяем установку через tg pkg list.
+        # transport-codegen plugins (WASM, built via wazero — slow first build).
+        # Install ONLY what this project needs: astg (the @tg parser, required)
+        # and server (Fiber server generator). NB: a bare `tg pkg add <repo>`
+        # tries to build ALL 10 plugins and hangs; the :<name> suffix selects one,
+        # and --fail-on-missing makes it non-interactive.
         mkdir -p /root/.agents
+        # On failure, capture a full verbose+debug trace (stack, download steps,
+        # file sizes/md5) to /tmp/tg-pkg-add-debug.log for an upstream issue.
+        # The log is retrievable via: msb cp ducalis-build:/tmp/tg-pkg-add-debug.log ./
         tg_install_plugins() {
-          HOME=/root tg pkg add https://github.com/seniorGolang/tgp-go:astg   --fail-on-missing
+          HOME=/root tg pkg add https://github.com/seniorGolang/tgp-go:astg   --fail-on-missing && \
           HOME=/root tg pkg add https://github.com/seniorGolang/tgp-go:server --fail-on-missing
         }
         tg_plugins_installed() {
           local lst; lst=$(HOME=/root tg pkg list 2>/dev/null || true)
           echo "$lst" | grep -q 'astg' && echo "$lst" | grep -q 'server'
         }
-        tg_install_plugins
-        if ! tg_plugins_installed; then
-          echo '[bootstrap] tg pkg add hit the download race; patching + rebuilding tg'
-          rm -rf /tmp/tgsrc && git clone --depth 1 --branch v3.0.5 https://github.com/seniorGolang/tg /tmp/tgsrc
-          cp /workspace/skills/tg-patch/install.go.patched \
-             /tmp/tgsrc/internal/installer/managers/installation/install.go
-          ( cd /tmp/tgsrc && GOOS=linux GOARCH="${ARCH}" CGO_ENABLED=0 go build -o /usr/local/bin/tg ./cmd/tg )
-          rm -rf /tmp/tgsrc
-          tg_install_plugins || true
+        if tg_install_plugins 2>/tmp/tg-pkg-add-stderr.log; then
+          echo '[bootstrap] tg plugins installed'
+        else
+          echo '[bootstrap] tg pkg add failed — capturing debug trace for issue report'
+          # Re-run the FIRST failing plugin with -v --log-level debug so the log
+          # has the full download/extract stack trace.
+          HOME=/root tg pkg add https://github.com/seniorGolang/tgp-go:astg \
+            --fail-on-missing -v --log-level debug \
+            >/tmp/tg-pkg-add-debug.log 2>&1 || true
+          # Also capture the partially-downloaded archive (md5 + size) so the
+          # upstream maintainer can compare against a known-good download.
+          echo '--- partial archive (if any) ---' >> /tmp/tg-pkg-add-debug.log
+          find /root/.agents /tmp -name '*-skills.tar.gz' -o -name '*.tar.gz' 2>/dev/null \
+            | head -5 >> /tmp/tg-pkg-add-debug.log
+          find /root/.agents /tmp -name '*-skills.tar.gz' 2>/dev/null \
+            | while read -r f; do echo "$f: $(wc -c < "$f") bytes, md5=$(md5sum "$f" | cut -d' ' -f1)"; done \
+            >> /tmp/tg-pkg-add-debug.log 2>&1 || true
+          echo '--- tg version + environment ---' >> /tmp/tg-pkg-add-debug.log
+          tg --version >> /tmp/tg-pkg-add-debug.log 2>&1 || true
+          echo "uname: $(uname -a)" >> /tmp/tg-pkg-add-debug.log
+          echo '[bootstrap] debug trace at /tmp/tg-pkg-add-debug.log (msb cp to retrieve)'
           tg_plugins_installed || echo "[bootstrap] WARN: tg plugins still not installed"
         fi
 
@@ -214,7 +241,7 @@ sandbox:
           src="/root${tgt#/home/loki}"
           if [ -e "$src" ]; then cp -a "$src" "$tgt"; fi
         done
-        cp -a "$GOPATH/bin/tg" /home/loki/go/bin/tg 2>/dev/null || true
+        # tg binary в /usr/local/bin/tg (доступен всем, mirror не нужен).
         chown -R loki:loki /home/loki/go /home/loki/.cache /home/loki/.tg /home/loki/.agents 2>/dev/null || true
 
         runuser -u loki -- bash -c '
@@ -225,9 +252,9 @@ sandbox:
 
     snapshot:
       # --- BUILD mode (active): один раз построить snapshot, потом apply из него ---
-      enabled: true
-      name: mcd-base
-      # from_snapshot: mcd-base
+      # enabled: true
+      # name: mcd-base
+      from_snapshot: mcd-base
       # --- APPLY mode: после build закомментируй enabled и раскомментируй from_snapshot,
       #     либо просто используй platform.yaml (там уже from_snapshot).
 
