@@ -1,6 +1,7 @@
 package main
 
 import (
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -50,9 +51,10 @@ func main() {
 	// Create adapter
 	integrationAdapter := adapter.NewIntegrationAdapter(integrationSvc)
 
-	// Build tg-generated transport server
-	srv := transport.New(logger,
-		transport.IntegrationService(transport.NewIntegrationService(integrationAdapter)),
+	// Build tg-generated transport server (tg v3: options take contracts directly)
+	slogLogger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	srv := transport.New(slogLogger,
+		transport.IntegrationService(integrationAdapter),
 	)
 
 	// Add health and readiness checks

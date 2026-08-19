@@ -123,6 +123,13 @@ clean:
 	rm -rf bin/
 	find $(TRANSPORT_DIR) -maxdepth 1 -name '*.go' -delete
 
+# Frontend (React SPA in web/)
+web:
+	cd web && npm install && npm run build
+
+web-dev:
+	cd web && npm run dev
+
 # Download dependencies
 deps:
 	go mod download

@@ -92,3 +92,9 @@ type TaskWithRank struct {
 	Rank       int     `json:"rank"`
 	Percentile float64 `json:"percentile"` // position in percentile (0-100)
 }
+
+// RankedTasks wraps the ranked list (single struct return is safe for the
+// tg v3 inline response rendering; a bare slice return is not).
+type RankedTasks struct {
+	Tasks []TaskWithRank `json:"tasks"`
+}

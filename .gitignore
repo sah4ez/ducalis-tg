@@ -41,3 +41,7 @@ microcode/.microcode/
 microcode/.skills-generated/
 microcode/.loki/
 
+
+# Frontend
+web/node_modules/
+web/dist/

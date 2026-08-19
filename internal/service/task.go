@@ -26,6 +26,7 @@ type TaskRepository interface {
 	Update(ctx context.Context, task *types.Task) error
 	Delete(ctx context.Context, id string) error
 	List(ctx context.Context, req types.ListTasksRequest) ([]types.Task, int, error)
+	GetRanked(ctx context.Context, workspaceID string, limit int, offset int) ([]types.TaskWithRank, error)
 }
 
 type VoteRepository interface {
@@ -189,6 +190,21 @@ func (s *TaskService) SetScores(ctx context.Context, taskID string, scores map[s
 	}
 
 	return task, nil
+}
+
+// GetRanked returns tasks ranked by final score (via the ranked_tasks VIEW).
+func (s *TaskService) GetRanked(ctx context.Context, workspaceID string, limit int, offset int) (types.RankedTasks, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	ranked, err := s.taskRepo.GetRanked(ctx, workspaceID, limit, offset)
+	if err != nil {
+		return types.RankedTasks{}, err
+	}
+	if ranked == nil {
+		ranked = []types.TaskWithRank{}
+	}
+	return types.RankedTasks{Tasks: ranked}, nil
 }
 
 func (s *TaskService) calculateFinalScore(scores map[string]float64, config types.ScoringConfig) float64 {

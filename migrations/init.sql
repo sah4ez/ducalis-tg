@@ -58,9 +58,13 @@ CREATE TABLE IF NOT EXISTS tasks (
     created_by UUID NOT NULL REFERENCES users(id),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    metadata JSONB DEFAULT '{}',
-    UNIQUE(workspace_id, external_id) WHERE external_id IS NOT NULL
+    metadata JSONB DEFAULT '{}'
 );
+
+-- NB: партиал-уникальность нельзя объявлять inline в CREATE TABLE (Postgres
+-- требует отдельный CREATE UNIQUE INDEX ... WHERE ...).
+CREATE UNIQUE INDEX IF NOT EXISTS uq_tasks_workspace_external
+    ON tasks(workspace_id, external_id) WHERE external_id IS NOT NULL;
 
 CREATE INDEX idx_tasks_workspace ON tasks(workspace_id);
 CREATE INDEX idx_tasks_status ON tasks(status);

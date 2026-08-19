@@ -70,14 +70,17 @@ func TestTaskAdapter_SetDependencies_NotImplemented(t *testing.T) {
 	}
 }
 
-func TestTaskAdapter_GetRanked_NotImplemented(t *testing.T) {
+func TestTaskAdapter_GetRanked(t *testing.T) {
 	logger := zerolog.New(zerolog.NewTestWriter(t)).With().Logger()
 	adapter := NewTaskAdapter(service.NewTaskService(
 		newStubTaskRepo(), newStubWorkspaceRepo(), newStubVoteRepo(), newStubEstimationRepo(), logger))
 
-	_, err := adapter.GetRanked(context.Background(), "ws-1", 10, 0)
-	if err == nil {
-		t.Error("expected error for unimplemented GetRanked")
+	result, err := adapter.GetRanked(context.Background(), "ws-1", 10, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Tasks == nil {
+		t.Error("expected non-nil Tasks slice")
 	}
 }
 
@@ -118,6 +121,10 @@ func (r *stubTaskRepo) List(ctx context.Context, req types.ListTasksRequest) ([]
 		result = append(result, *t)
 	}
 	return result, len(result), nil
+}
+
+func (r *stubTaskRepo) GetRanked(ctx context.Context, workspaceID string, limit int, offset int) ([]types.TaskWithRank, error) {
+	return []types.TaskWithRank{}, nil
 }
 
 // stub vote repo

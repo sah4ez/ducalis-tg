@@ -1,8 +1,6 @@
-// Package contract defines service interfaces for tg code generation
-// @tg title=Priora API
-// @tg version=1.0.0
-// @tg description=Task prioritization and scoring platform
-// @tg jsonRPC-server log metrics trace
+// Package contract declares the service APIs as @tg-annotated Go interfaces.
+// The HTTP (fiber) transport is GENERATED from these contracts by
+// `tg server -o internal/transport` (tg v3, tgp-go plugins).
 package contract
 
 import (
@@ -11,70 +9,91 @@ import (
 	"github.com/sah4ez/ducalis-tg/pkg/types"
 )
 
-// WorkspaceService manages workspaces and their configuration
-// @tg tag=workspaces Workspaces management
-// @tg http-prefix=api/v1/workspaces
+// WorkspaceService manages workspaces and their configuration.
+//
+// @tg title=`Workspace Service`
+// @tg version=`1.0.0`
+// @tg desc=`Workspace CRUD, scoring configuration and members.`
+// @tg http-server
+// @tg metrics
 type WorkspaceService interface {
 
-	// Create creates a new workspace
-	// @tg summary=Create workspace
-	// @tg desc=Creates a new workspace with custom scoring configuration
+	// Create creates a new workspace with custom scoring configuration.
+	//
 	// @tg http-method=POST
-	// @tg http-path=/
+	// @tg http-path=`/api/v1/workspaces`
+	// @tg http-success=201
+	// @tg summary=`Create workspace`
+	// @tg desc=`Creates a new workspace with custom scoring configuration`
 	Create(ctx context.Context, req types.CreateWorkspaceRequest) (workspace *types.Workspace, err error)
 
-	// Get returns workspace by ID
-	// @tg summary=Get workspace
+	// Get returns workspace by ID.
+	//
 	// @tg http-method=GET
-	// @tg http-path=/{id}
-	// @tg http-path-params=id:id
+	// @tg http-path=`/api/v1/workspaces/:id`
+	// @tg http-args=id|id|explicit
+	// @tg summary=`Get workspace`
 	Get(ctx context.Context, id string) (workspace *types.Workspace, err error)
 
-	// Update updates workspace settings
-	// @tg summary=Update workspace
+	// Update updates workspace settings.
+	//
 	// @tg http-method=PATCH
-	// @tg http-path=/{id}
-	// @tg http-path-params=id:id
+	// @tg http-path=`/api/v1/workspaces/:id`
+	// @tg http-args=id|id|explicit
+	// @tg summary=`Update workspace`
 	Update(ctx context.Context, id string, req types.UpdateWorkspaceRequest) (workspace *types.Workspace, err error)
 
-	// Delete deletes workspace
-	// @tg summary=Delete workspace
+	// Delete deletes workspace.
+	//
 	// @tg http-method=DELETE
-	// @tg http-path=/{id}
-	// @tg http-path-params=id:id
+	// @tg http-path=`/api/v1/workspaces/:id`
+	// @tg http-args=id|id|explicit
+	// @tg http-success=204
+	// @tg summary=`Delete workspace`
 	Delete(ctx context.Context, id string) (err error)
 
-	// List returns user's workspaces
-	// @tg summary=List workspaces
+	// List returns user's workspaces.
+	//
 	// @tg http-method=GET
-	// @tg http-path=/
+	// @tg http-path=`/api/v1/workspaces`
+	// @tg http-args=userID|userID|explicit
+	// @tg http-args=limit|limit|explicit
+	// @tg http-args=offset|offset|explicit
+	// @tg summary=`List workspaces`
 	List(ctx context.Context, userID string, limit int, offset int) (workspaces []types.Workspace, total int, err error)
 
-	// SetScoringConfig configures scoring criteria and weights
-	// @tg summary=Set scoring configuration
+	// SetScoringConfig configures scoring criteria and weights.
+	//
 	// @tg http-method=PUT
-	// @tg http-path=/{id}/scoring
-	// @tg http-path-params=id:workspaceID
-	SetScoringConfig(ctx context.Context, workspaceID string, config types.ScoringConfig) (workspace *types.Workspace, err error)
+	// @tg http-path=`/api/v1/workspaces/:id/scoring`
+	// @tg http-args=id|id|explicit
+	// @tg enableInlineSingle
+	// @tg summary=`Set scoring configuration`
+	SetScoringConfig(ctx context.Context, id string, config types.ScoringConfig) (workspace *types.Workspace, err error)
 
-	// InviteMember invites a new member to workspace
-	// @tg summary=Invite member
+	// InviteMember invites a new member to workspace.
+	//
 	// @tg http-method=POST
-	// @tg http-path=/{id}/members
-	// @tg http-path-params=id:workspaceID
-	InviteMember(ctx context.Context, workspaceID string, email string, role string) (member *types.Member, err error)
+	// @tg http-path=`/api/v1/workspaces/:id/members`
+	// @tg http-args=id|id|explicit
+	// @tg http-success=201
+	// @tg summary=`Invite member`
+	InviteMember(ctx context.Context, id string, email string, role string) (member *types.Member, err error)
 
-	// ListMembers returns workspace members
-	// @tg summary=List members
+	// ListMembers returns workspace members.
+	//
 	// @tg http-method=GET
-	// @tg http-path=/{id}/members
-	// @tg http-path-params=id:workspaceID
-	ListMembers(ctx context.Context, workspaceID string) (members []types.Member, err error)
+	// @tg http-path=`/api/v1/workspaces/:id/members`
+	// @tg http-args=id|id|explicit
+	// @tg summary=`List members`
+	ListMembers(ctx context.Context, id string) (members []types.Member, err error)
 
-	// RemoveMember removes member from workspace
-	// @tg summary=Remove member
+	// RemoveMember removes member from workspace.
+	//
 	// @tg http-method=DELETE
-	// @tg http-path=/{id}/members/{memberID}
-	// @tg http-path-params=id:workspaceID,memberID:memberID
-	RemoveMember(ctx context.Context, workspaceID string, memberID string) (err error)
+	// @tg http-path=`/api/v1/workspaces/:id/members/:memberID`
+	// @tg http-args=id|id|explicit
+	// @tg enableInlineSingle
+	// @tg summary=`Remove member`
+	RemoveMember(ctx context.Context, id string, memberID string) (err error)
 }

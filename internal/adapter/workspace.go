@@ -38,18 +38,18 @@ func (a *WorkspaceAdapter) List(ctx context.Context, userID string, limit int, o
 	return a.svc.List(ctx, userID, limit, offset)
 }
 
-func (a *WorkspaceAdapter) SetScoringConfig(ctx context.Context, workspaceID string, config types.ScoringConfig) (*types.Workspace, error) {
-	return a.svc.SetScoringConfig(ctx, workspaceID, config)
+func (a *WorkspaceAdapter) SetScoringConfig(ctx context.Context, id string, config types.ScoringConfig) (*types.Workspace, error) {
+	return a.svc.SetScoringConfig(ctx, id, config)
 }
 
-func (a *WorkspaceAdapter) InviteMember(ctx context.Context, workspaceID string, email string, role string) (*types.Member, error) {
-	return a.svc.InviteMember(ctx, workspaceID, email, role)
+func (a *WorkspaceAdapter) InviteMember(ctx context.Context, id string, email string, role string) (*types.Member, error) {
+	return a.svc.InviteMember(ctx, id, email, role)
 }
 
-func (a *WorkspaceAdapter) ListMembers(ctx context.Context, workspaceID string) ([]types.Member, error) {
-	return a.svc.ListMembers(ctx, workspaceID)
+func (a *WorkspaceAdapter) ListMembers(ctx context.Context, id string) ([]types.Member, error) {
+	return a.svc.ListMembers(ctx, id)
 }
 
-func (a *WorkspaceAdapter) RemoveMember(ctx context.Context, workspaceID string, memberID string) error {
-	return a.svc.RemoveMember(ctx, workspaceID, memberID)
+func (a *WorkspaceAdapter) RemoveMember(ctx context.Context, id string, memberID string) error {
+	return a.svc.RemoveMember(ctx, id, memberID)
 }

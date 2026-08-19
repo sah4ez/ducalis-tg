@@ -1,3 +1,11 @@
+# Frontend build stage
+FROM node:20-alpine AS webbuilder
+WORKDIR /web
+COPY web/package.json web/package-lock.json* ./
+RUN npm ci || npm install
+COPY web/ .
+RUN npm run build
+
 # Build stage
 FROM golang:1.26-alpine AS builder
 
@@ -38,6 +46,7 @@ WORKDIR /app
 COPY --from=builder /server-public /app/server-public
 COPY --from=builder /server-admin /app/server-admin
 COPY --from=builder /server-internal /app/server-internal
+COPY --from=webbuilder /web/dist /app/web/dist
 
 # Copy migrations (for manual migration runs)
 COPY migrations/ /app/migrations/

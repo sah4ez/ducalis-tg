@@ -108,7 +108,7 @@ func (r *WorkspaceRepository) Create(ctx context.Context, workspace *types.Works
 	scoringJSON, _ := json.Marshal(workspace.Scoring)
 	query := `
 		INSERT INTO workspaces (id, name, description, owner_id, scoring_config, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		VALUES ($1, $2, NULLIF($3,''), $4, $5::jsonb, $6, $7)
 	`
 	_, err := r.db.Pool().Exec(ctx, query,
 		workspace.ID, workspace.Name, workspace.Description, workspace.OwnerID,
@@ -118,7 +118,7 @@ func (r *WorkspaceRepository) Create(ctx context.Context, workspace *types.Works
 }
 
 func (r *WorkspaceRepository) Get(ctx context.Context, id string) (*types.Workspace, error) {
-	query := `SELECT id, name, description, owner_id, scoring_config, created_at, updated_at FROM workspaces WHERE id = $1`
+	query := `SELECT id, name, COALESCE(description,''), owner_id, scoring_config, created_at, updated_at FROM workspaces WHERE id = $1`
 	workspace := &types.Workspace{}
 	var scoringJSON []byte
 
@@ -140,7 +140,7 @@ func (r *WorkspaceRepository) Get(ctx context.Context, id string) (*types.Worksp
 
 func (r *WorkspaceRepository) Update(ctx context.Context, workspace *types.Workspace) error {
 	scoringJSON, _ := json.Marshal(workspace.Scoring)
-	query := `UPDATE workspaces SET name = $2, description = $3, scoring_config = $4, updated_at = $5 WHERE id = $1`
+	query := `UPDATE workspaces SET name = $2, description = NULLIF($3,''), scoring_config = $4::jsonb, updated_at = $5 WHERE id = $1`
 	result, err := r.db.Pool().Exec(ctx, query,
 		workspace.ID, workspace.Name, workspace.Description, scoringJSON, workspace.UpdatedAt,
 	)
@@ -176,7 +176,7 @@ func (r *WorkspaceRepository) List(ctx context.Context, userID string, limit, of
 	}
 
 	rows, err := r.db.Pool().Query(ctx, `
-		SELECT w.id, w.name, w.description, w.owner_id, w.scoring_config, w.created_at, w.updated_at
+		SELECT w.id, w.name, COALESCE(w.description,''), w.owner_id, w.scoring_config, w.created_at, w.updated_at
 		FROM workspaces w
 		INNER JOIN members m ON m.workspace_id = w.id
 		WHERE m.user_id = $1
@@ -283,12 +283,16 @@ func (r *TaskRepository) Create(ctx context.Context, task *types.Task) error {
 	scoresJSON, _ := json.Marshal(task.Scores)
 	metadataJSON, _ := json.Marshal(task.Metadata)
 
+	// NULLIF/COALESCE: пустые строки в nullable uuid/text колонках невалидны
+	// ("" не кастуется в uuid), а NULL не сканируется в string — нормализуем
+	// на границе SQL.
 	query := `
 		INSERT INTO tasks (
 			id, workspace_id, external_id, external_type, external_url,
 			title, description, scores, final_score, status, priority,
 			labels, assignee_id, created_by, created_at, updated_at, metadata
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+		) VALUES ($1, $2, NULLIF($3,''), NULLIF($4,''), NULLIF($5,''), $6, NULLIF($7,''),
+			$8::jsonb, $9, $10, NULLIF($11,''), $12, NULLIF($13,'')::uuid, $14, $15, $16, $17::jsonb)
 	`
 	_, err := r.db.Pool().Exec(ctx, query,
 		task.ID, task.WorkspaceID, task.ExternalID, task.ExternalType, task.ExternalURL,
@@ -300,9 +304,10 @@ func (r *TaskRepository) Create(ctx context.Context, task *types.Task) error {
 
 func (r *TaskRepository) Get(ctx context.Context, id string) (*types.Task, error) {
 	query := `
-		SELECT id, workspace_id, external_id, external_type, external_url,
-			title, description, scores, final_score, status, priority,
-			labels, assignee_id, created_by, created_at, updated_at, metadata
+		SELECT id, workspace_id,
+			COALESCE(external_id::text,''), COALESCE(external_type,''), COALESCE(external_url,''),
+			title, COALESCE(description,''), scores, final_score, COALESCE(status,''), COALESCE(priority,''),
+			labels, COALESCE(assignee_id::text,''), created_by, created_at, updated_at, metadata
 		FROM tasks WHERE id = $1
 	`
 	task := &types.Task{}
@@ -333,8 +338,9 @@ func (r *TaskRepository) Update(ctx context.Context, task *types.Task) error {
 	metadataJSON, _ := json.Marshal(task.Metadata)
 
 	query := `
-		UPDATE tasks SET title = $2, description = $3, scores = $4, final_score = $5,
-			status = $6, priority = $7, labels = $8, assignee_id = $9, updated_at = $10, metadata = $11
+		UPDATE tasks SET title = $2, description = NULLIF($3,''), scores = $4::jsonb, final_score = $5,
+			status = $6, priority = NULLIF($7,''), labels = $8, assignee_id = NULLIF($9,'')::uuid,
+			updated_at = $10, metadata = $11::jsonb
 		WHERE id = $1
 	`
 	result, err := r.db.Pool().Exec(ctx, query,
@@ -401,7 +407,7 @@ func (r *TaskRepository) List(ctx context.Context, req types.ListTasksRequest) (
 		limit = 100
 	}
 
-	query := `SELECT id, workspace_id, external_id, external_type, external_url, title, description, scores, final_score, status, priority, labels, assignee_id, created_by, created_at, updated_at, metadata ` +
+	query := `SELECT id, workspace_id, COALESCE(external_id::text,''), COALESCE(external_type,''), COALESCE(external_url,''), title, COALESCE(description,''), scores, final_score, COALESCE(status,''), COALESCE(priority,''), labels, COALESCE(assignee_id::text,''), created_by, created_at, updated_at, metadata ` +
 		baseQuery + ` ORDER BY created_at DESC LIMIT $` + fmt.Sprintf("%d", argIdx) + ` OFFSET $` + fmt.Sprintf("%d", argIdx+1)
 	args = append(args, limit, req.Offset)
 
@@ -435,6 +441,51 @@ func (r *TaskRepository) List(ctx context.Context, req types.ListTasksRequest) (
 		tasks = []types.Task{}
 	}
 	return tasks, total, nil
+}
+
+func (r *TaskRepository) GetRanked(ctx context.Context, workspaceID string, limit int, offset int) ([]types.TaskWithRank, error) {
+	query := `
+		SELECT id, workspace_id,
+			COALESCE(external_id::text,''), COALESCE(external_type,''), COALESCE(external_url,''),
+			title, COALESCE(description,''), scores, final_score, COALESCE(status,''), COALESCE(priority,''),
+			labels, COALESCE(assignee_id::text,''), created_by, created_at, updated_at, metadata,
+			COALESCE(rank,0), COALESCE(percentile,0)
+		FROM ranked_tasks
+		WHERE workspace_id = $1
+		ORDER BY rank ASC
+		LIMIT $2 OFFSET $3
+	`
+	rows, err := r.db.Pool().Query(ctx, query, workspaceID, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var tasks []types.TaskWithRank
+	for rows.Next() {
+		var t types.TaskWithRank
+		var scoresJSON, metadataJSON []byte
+		if err := rows.Scan(
+			&t.ID, &t.WorkspaceID,
+			&t.ExternalID, &t.ExternalType, &t.ExternalURL,
+			&t.Title, &t.Description, &scoresJSON, &t.FinalScore, &t.Status, &t.Priority,
+			&t.Labels, &t.AssigneeID, &t.CreatedBy, &t.CreatedAt, &t.UpdatedAt, &metadataJSON,
+			&t.Rank, &t.Percentile,
+		); err != nil {
+			return nil, err
+		}
+		if len(scoresJSON) > 0 {
+			json.Unmarshal(scoresJSON, &t.Scores)
+		}
+		if len(metadataJSON) > 0 {
+			json.Unmarshal(metadataJSON, &t.Metadata)
+		}
+		tasks = append(tasks, t)
+	}
+	if tasks == nil {
+		tasks = []types.TaskWithRank{}
+	}
+	return tasks, nil
 }
 
 // ===== VOTE REPOSITORY =====
