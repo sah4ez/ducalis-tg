@@ -4,6 +4,11 @@
 set -euo pipefail
 
 APP_DIR="${APP_DIR:-/opt/ducalis}"
+if [[ ! "${APP_DIR}" =~ ^/[a-zA-Z0-9/_.-]+$ ]]; then
+  echo "ERROR: APP_DIR='${APP_DIR}' — подозрительное значение." >&2
+  echo "  Проверьте: env | grep APP_DIR" >&2
+  exit 1
+fi
 PIDS="${APP_DIR}/pids"
 CURRENT="${APP_DIR}/current"
 LOGS="${APP_DIR}/logs"

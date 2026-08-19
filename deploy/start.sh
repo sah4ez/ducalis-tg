@@ -7,6 +7,11 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEPLOY_DIR="${DEPLOY_DIR:-${SCRIPT_DIR}}"
 APP_DIR="${APP_DIR:-/opt/ducalis}"
+if [[ ! "${APP_DIR}" =~ ^/[a-zA-Z0-9/_.-]+$ ]]; then
+  echo "ERROR: APP_DIR='${APP_DIR}' — подозрительное значение." >&2
+  echo "  Проверьте: env | grep APP_DIR" >&2
+  exit 1
+fi
 APP_USER="${APP_USER:-ducalis}"
 CURRENT="${APP_DIR}/current"
 LOGS="${APP_DIR}/logs"
@@ -17,7 +22,11 @@ ENV_FILE="${DEPLOY_DIR}/env"
 set -a; source "${ENV_FILE}"; set +a
 
 if [[ ! -d "${CURRENT}/bin" ]]; then
-  echo "ERROR: ${CURRENT}/bin не найден. Сначала bash deploy/deploy.sh" >&2
+  echo "ERROR: ${CURRENT}/bin не найден." >&2
+  echo "  APP_DIR=${APP_DIR}" >&2
+  echo "  CURRENT=${CURRENT} (symlink: $(readlink "${CURRENT}" 2>/dev/null || echo 'нет'))" >&2
+  echo "  Сначала: bash deploy/deploy.sh" >&2
+  echo "  Если deploy уже запускался — проверьте: ls -la ${APP_DIR}/releases/" >&2
   exit 1
 fi
 

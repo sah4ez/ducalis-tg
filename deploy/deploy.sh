@@ -20,6 +20,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 DEPLOY_DIR="${DEPLOY_DIR:-${SCRIPT_DIR}}"
 APP_DIR="${APP_DIR:-/opt/ducalis}"
+if [[ ! "${APP_DIR}" =~ ^/[a-zA-Z0-9/_.-]+$ ]]; then
+  echo "ERROR: APP_DIR='${APP_DIR}' — подозрительное значение." >&2
+  echo "  Проверьте: env | grep APP_DIR" >&2
+  exit 1
+fi
 APP_USER="${APP_USER:-ducalis}"
 RELEASES_DIR="${APP_DIR}/releases"
 TS=$(date +%Y%m%d-%H%M%S)

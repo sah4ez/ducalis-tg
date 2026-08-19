@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS users (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE INDEX idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 
 -- Workspaces table
 CREATE TABLE IF NOT EXISTS workspaces (
@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS workspaces (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE INDEX idx_workspaces_owner ON workspaces(owner_id);
+CREATE INDEX IF NOT EXISTS idx_workspaces_owner ON workspaces(owner_id);
 
 -- Workspace members
 CREATE TABLE IF NOT EXISTS members (
@@ -37,8 +37,8 @@ CREATE TABLE IF NOT EXISTS members (
     UNIQUE(workspace_id, user_id)
 );
 
-CREATE INDEX idx_members_workspace ON members(workspace_id);
-CREATE INDEX idx_members_user ON members(user_id);
+CREATE INDEX IF NOT EXISTS idx_members_workspace ON members(workspace_id);
+CREATE INDEX IF NOT EXISTS idx_members_user ON members(user_id);
 
 -- Tasks table
 CREATE TABLE IF NOT EXISTS tasks (
@@ -66,10 +66,10 @@ CREATE TABLE IF NOT EXISTS tasks (
 CREATE UNIQUE INDEX IF NOT EXISTS uq_tasks_workspace_external
     ON tasks(workspace_id, external_id) WHERE external_id IS NOT NULL;
 
-CREATE INDEX idx_tasks_workspace ON tasks(workspace_id);
-CREATE INDEX idx_tasks_status ON tasks(status);
-CREATE INDEX idx_tasks_final_score ON tasks(workspace_id, final_score DESC);
-CREATE INDEX idx_tasks_external ON tasks(workspace_id, external_id) WHERE external_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_tasks_workspace ON tasks(workspace_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+CREATE INDEX IF NOT EXISTS idx_tasks_final_score ON tasks(workspace_id, final_score DESC);
+CREATE INDEX IF NOT EXISTS idx_tasks_external ON tasks(workspace_id, external_id) WHERE external_id IS NOT NULL;
 
 -- Task dependencies
 CREATE TABLE IF NOT EXISTS task_dependencies (
@@ -89,7 +89,7 @@ CREATE TABLE IF NOT EXISTS votes (
     UNIQUE(task_id, user_id)
 );
 
-CREATE INDEX idx_votes_task ON votes(task_id);
+CREATE INDEX IF NOT EXISTS idx_votes_task ON votes(task_id);
 
 -- Estimations
 CREATE TABLE IF NOT EXISTS estimations (
@@ -103,7 +103,7 @@ CREATE TABLE IF NOT EXISTS estimations (
     UNIQUE(task_id, user_id)
 );
 
-CREATE INDEX idx_estimations_task ON estimations(task_id);
+CREATE INDEX IF NOT EXISTS idx_estimations_task ON estimations(task_id);
 
 -- Integrations
 CREATE TABLE IF NOT EXISTS integrations (
@@ -121,8 +121,8 @@ CREATE TABLE IF NOT EXISTS integrations (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE INDEX idx_integrations_workspace ON integrations(workspace_id);
-CREATE INDEX idx_integrations_type ON integrations(type);
+CREATE INDEX IF NOT EXISTS idx_integrations_workspace ON integrations(workspace_id);
+CREATE INDEX IF NOT EXISTS idx_integrations_type ON integrations(type);
 
 -- Function to update updated_at
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -134,15 +134,19 @@ END;
 $$ language 'plpgsql';
 
 -- Apply updated_at triggers
+DROP TRIGGER IF EXISTS update_users_updated_at ON users;
 CREATE TRIGGER update_users_updated_at BEFORE UPDATE ON users
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_workspaces_updated_at ON workspaces;
 CREATE TRIGGER update_workspaces_updated_at BEFORE UPDATE ON workspaces
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_tasks_updated_at ON tasks;
 CREATE TRIGGER update_tasks_updated_at BEFORE UPDATE ON tasks
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_integrations_updated_at ON integrations;
 CREATE TRIGGER update_integrations_updated_at BEFORE UPDATE ON integrations
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 

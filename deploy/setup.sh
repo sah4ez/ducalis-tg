@@ -20,6 +20,13 @@ NODE_MAJOR="${NODE_MAJOR:-20}"
 APP_DIR="${APP_DIR:-/opt/ducalis}"
 APP_USER="${APP_USER:-ducalis}"
 
+# Санити-чек: APP_DIR должен быть абсолютным путём без спец-символов
+if [[ ! "${APP_DIR}" =~ ^/[a-zA-Z0-9/_.-]+$ ]]; then
+  echo "ERROR: APP_DIR='${APP_DIR}' — подозрительное значение (ожидается абсолютный путь типа /opt/ducalis)." >&2
+  echo "  Проверьте: env | grep APP_DIR" >&2
+  exit 1
+fi
+
 echo "═════════════════════════════════════════════════════════════"
 echo "  Ducalis VM Setup"
 echo "  DB: ${DB_USER}@localhost/${DB_NAME}"
@@ -62,6 +69,8 @@ echo "  Node: $(node -v), npm: $(npm -v)"
 # ── 4. PostgreSQL ──────────────────────────────────────────────────
 echo "── PostgreSQL ──"
 systemctl enable --now postgresql 2>/dev/null || true
+# sudo -u postgres не может работать из /root — уходим в /tmp
+cd /tmp
 
 # ждём готовности
 for i in $(seq 1 15); do
@@ -80,8 +89,20 @@ echo "  PostgreSQL: $(sudo -u postgres psql -tAc 'SELECT version()' | head -c 40
 echo "── Пользователь ${APP_USER} ──"
 id -u "${APP_USER}" >/dev/null 2>&1 || useradd --system --create-home --shell /bin/bash "${APP_USER}"
 
-mkdir -p "${APP_DIR}"/{bin,web,logs, releases}
+# ВАЖНО: без пробелов в brace — "{bin,web,logs, releases}" с пробелом НЕ
+# разворачивается bash'ем и создаёт мусорные директории с {} в именах.
+mkdir -p "${APP_DIR}/bin" "${APP_DIR}/web" "${APP_DIR}/logs" "${APP_DIR}/releases"
+
+# валидация: все 4 директории должны существовать
+for d in bin web logs releases; do
+  if [[ ! -d "${APP_DIR}/${d}" ]]; then
+    echo "ERROR: не удалось создать ${APP_DIR}/${d}" >&2
+    exit 1
+  fi
+done
+
 chown -R "${APP_USER}:${APP_USER}" "${APP_DIR}"
+echo "  ✓ ${APP_DIR}/{bin,web,logs,releases} созданы"
 
 # ── 6. Миграции (idempotent — CREATE IF NOT EXISTS) ────────────────
 echo "── Миграции ──"
